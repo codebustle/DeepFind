@@ -17,7 +17,7 @@ The test project can also run on Linux with `dotnet test tests/DeepFind.Tests -c
 ## Search your files
 
 1. Open **Index settings**, add one or more folders, and choose **Apply changes**. Indexing runs while DeepFind is open.
-2. Enter a term such as `ballast`, quote an exact phrase such as `"emergency towing"`, or use `AND`, `OR`, `filename:`, and `ext:`. Adjacent terms require both matches. The extension restriction applies to the whole search.
+2. Enter a word such as `apple`, quote an exact phrase such as `"hellow world"`, or use `AND`, `OR`, `filename:`, and `ext:`. Adjacent terms require both matches. The extension restriction applies to the whole search.
 3. Filter or sort the results. Press Enter on a selected result to open the file, Ctrl+P to preview indexed text, or Ctrl+C to copy its path. The result menu also opens Explorer. Ctrl+F or Ctrl+L focuses search.
 
 PDF, DOCX, XLSX, PPTX, TXT, Markdown, CSV, and HTML are supported. Image-only PDFs need OCR. Other formats can optionally appear in filename and path results. PDF excerpts show the page, and spreadsheet excerpts show the worksheet and cell when known. Extraction is bounded to the first million characters or 20,000 text segments. Large or unreadable files can still appear by name. The **Status** tab shows document notices and allows retries, pause, resume, clear, and rebuild.
