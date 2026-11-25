@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DeepFind.App/DeepFind.App.csproj" />
+    <Project Path="src/DeepFind.Core/DeepFind.Core.csproj" />
+    <Project Path="src/DeepFind.Extraction/DeepFind.Extraction.csproj" />
+    <Project Path="src/DeepFind.Indexing/DeepFind.Indexing.csproj" />
+    <Project Path="src/DeepFind.Infrastructure/DeepFind.Infrastructure.csproj" />
+    <Project Path="src/DeepFind.Search/DeepFind.Search.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DeepFind.Tests/DeepFind.Tests.csproj" />
+  </Folder>
+</Solution>

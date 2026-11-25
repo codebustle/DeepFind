@@ -1,0 +1,38 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="DeepFind" Manufacturer="DeepFind" Version="1.0.0" Language="1033"
+           UpgradeCode="{ED6F0B68-C8E4-4F0A-A37B-C506335BA17A}" Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of DeepFind is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Property Id="REMOVEINDEX" Secure="yes" />
+    <SetProperty Id="DeepFindDefaultData" Value="[LocalAppDataFolder]DeepFind" Before="Wix4RemoveFoldersEx_X64" Sequence="execute"
+                 Condition="Installed AND REMOVEINDEX = 1 AND NOT UPGRADINGPRODUCTCODE" />
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="Usage.rtf" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="DeepFind">
+          <Component Id="DeepFindFiles" Guid="{0F7241DB-9F6E-4221-9AC4-2F4EB20A3918}">
+            <File Id="DeepFindExecutable" Source="$(var.AppPublishDir)/DeepFind.App.exe" />
+            <RegistryValue Root="HKCU" Key="Software\DeepFind\Installer" Name="Application" Type="integer" Value="1" KeyPath="yes" />
+            <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+            <util:RemoveFolderEx On="uninstall" Property="DeepFindDefaultData" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuEntry" Guid="{0ECD3BC0-88BC-45E0-BEC5-516D7C96E819}">
+        <Shortcut Id="DeepFindShortcut" Name="DeepFind" Description="Search indexed files"
+                  Target="[#DeepFindExecutable]" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\DeepFind\Installer" Name="Shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+    <Feature Id="DeepFindApplication" Title="DeepFind" Level="1">
+      <ComponentRef Id="DeepFindFiles" />
+      <ComponentRef Id="StartMenuEntry" />
+    </Feature>
+  </Package>
+</Wix>

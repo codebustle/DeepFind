@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OutputType>WinExe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DeepFind.Core/DeepFind.Core.csproj" />
+    <ProjectReference Include="../DeepFind.Infrastructure/DeepFind.Infrastructure.csproj" />
+    <ProjectReference Include="../DeepFind.Search/DeepFind.Search.csproj" />
+    <ProjectReference Include="../DeepFind.Indexing/DeepFind.Indexing.csproj" />
+    <PackageReference Include="Serilog" Version="4.3.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+</Project>

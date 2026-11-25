@@ -1,0 +1,72 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet build DeepFind.slnx -c Release
+      - run: dotnet test DeepFind.slnx -c Release --no-build
+      - run: dotnet list DeepFind.slnx package --vulnerable --include-transitive
+      - run: dotnet publish src/DeepFind.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
+      - run: dotnet build installer/DeepFind.Installer.wixproj -c Release
+      - name: Install, launch, and uninstall DeepFind
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($msi.Count -ne 1) { throw "Expected one DeepFind installer, found $($msi.Count)." }
+
+          function Invoke-Installer($operation, $log) {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`""
+            $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
+          }
+
+          $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
+          Invoke-Installer /i deepfind-install.log
+          try {
+            $process = Start-Process $application -PassThru
+            try {
+              $deadline = (Get-Date).AddSeconds(45)
+              do {
+                $process.Refresh()
+                if ($process.HasExited) { throw "DeepFind exited during startup with code $($process.ExitCode)." }
+                if ($process.MainWindowHandle -ne 0 -and $process.MainWindowTitle -eq 'DeepFind') { break }
+                Start-Sleep -Milliseconds 250
+              } while ((Get-Date) -lt $deadline)
+              if ($process.MainWindowHandle -eq 0 -or $process.MainWindowTitle -ne 'DeepFind') {
+                throw "DeepFind did not open its main window."
+              }
+              if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
+                throw "DeepFind did not close cleanly."
+              }
+            } finally {
+              if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            }
+          } finally {
+            Invoke-Installer /x deepfind-uninstall.log
+          }
+          if (Test-Path $application) { throw "DeepFind executable remained after uninstall." }
+      - name: Upload installer logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-logs
+          path: ${{ runner.temp }}/deepfind-*.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeepFind-Setup-x64
+          path: installer/bin/**/DeepFind-Setup-x64.msi
+          if-no-files-found: error
