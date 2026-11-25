@@ -20,6 +20,7 @@ public partial class MainWindow : Window
         this.model = model;
         Theme.Apply(model.Settings.Theme);
         InitializeComponent();
+        Theme.AttachWindow(this);
         DataContext = model;
         SystemEvents.UserPreferenceChanged += OnPreferencesChanged;
     }
@@ -36,6 +37,14 @@ public partial class MainWindow : Window
         Dispatcher.InvokeAsync(() => Theme.Apply(model.Settings.Theme));
 
     private void OnSearch(object sender, RoutedEventArgs e) => model.QueueSearch(delay: false);
+    private void OnClearSearch(object sender, RoutedEventArgs e)
+    {
+        // Clear only the query; keep the selected filter and sort and refresh results immediately.
+        model.Query = string.Empty;
+        model.QueueSearch(delay: false);
+        SearchBox.Focus();
+    }
+
     private void OnFilter(object sender, RoutedEventArgs e)
     {
         if (sender is RadioButton { Tag: string tag })
@@ -82,6 +91,17 @@ public partial class MainWindow : Window
             return;
 
         e.Handled = true;
+    }
+
+    private void OnResultRightClick(object sender, MouseButtonEventArgs e)
+    {
+        // A context-menu command must act on the row under the pointer.
+        if (e.OriginalSource is DependencyObject target &&
+            ItemsControl.ContainerFromElement(ResultsList, target) is ListBoxItem item)
+        {
+            item.IsSelected = true;
+            item.Focus();
+        }
     }
 
     private void OnResultDoubleClick(object sender, MouseButtonEventArgs e)
@@ -148,17 +168,25 @@ public partial class MainWindow : Window
             Owner = this, Title = row.Name, Width = 620, Height = 305, MinWidth = 300, MinHeight = 200,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, FontFamily = FontFamily, FontSize = 15
         };
+        Theme.AttachWindow(dialog);
         dialog.SetResourceReference(BackgroundProperty, "Surface");
         dialog.SetResourceReference(ForegroundProperty, "Ink");
         var content = new DockPanel { Margin = new Thickness(20) };
         var close = new Button { Content = "Close", IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right,
-            Padding = new Thickness(16, 5, 16, 5), Margin = new Thickness(0, 12, 0, 0) };
-        DockPanel.SetDock(close, Dock.Bottom);
-        content.Children.Add(close);
-        var path = new TextBlock { Text = row.PathText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+            MinWidth = 80 };
+        close.SetResourceReference(FrameworkElement.StyleProperty, "SoftButton");
+        var footer = new Border { BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(0, 10, 0, 0), Margin = new Thickness(0, 10, 0, 0), Child = close };
+        footer.SetResourceReference(Border.BorderBrushProperty, "Line");
+        DockPanel.SetDock(footer, Dock.Bottom);
+        content.Children.Add(footer);
+        var path = new TextBlock { Text = row.PathText, TextWrapping = TextWrapping.Wrap, FontSize = 13 };
         path.SetResourceReference(TextBlock.ForegroundProperty, "Secondary");
-        DockPanel.SetDock(path, Dock.Top);
-        content.Children.Add(path);
+        var header = new Border { BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(0, 0, 0, 8), Margin = new Thickness(0, 0, 0, 9), Child = path };
+        header.SetResourceReference(Border.BorderBrushProperty, "Line");
+        DockPanel.SetDock(header, Dock.Top);
+        content.Children.Add(header);
         var preview = new TextBlock { TextWrapping = TextWrapping.Wrap };
         string text;
         try { text = model.ReadPreview(row.Hit); }

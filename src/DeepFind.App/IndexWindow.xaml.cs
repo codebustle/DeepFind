@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using DeepFind.Core;
 using Microsoft.Win32;
 
@@ -16,6 +17,7 @@ public partial class IndexWindow : Window
     {
         this.model = model;
         InitializeComponent();
+        Theme.AttachWindow(this);
         DataContext = model;
         folders = new(model.Settings.Folders);
         FolderList.ItemsSource = folders;
@@ -25,11 +27,24 @@ public partial class IndexWindow : Window
         Exclusions.Text = string.Join(Environment.NewLine, model.Settings.Exclusions);
         IncludeOther.IsChecked = model.Settings.IncludeOtherFiles;
         IndexLocation.Text = model.Settings.IndexLocation ?? "";
-        StorageNote.Text = $"Current index: {model.IndexDirectory}\nThe index contains local copies of extracted text. Clear the index before changing locations to remove those copies from this location.";
+        StorageNote.Text = $"Current index: {model.IndexDirectory}\nThe index stores copies of extracted text. Clear it before changing storage location to remove the old copies.";
         ThemeChoice.ItemsSource = new[] { "System", "Light", "Dark" };
         ThemeChoice.SelectedItem = model.Settings.Theme;
         UpdatePauseButton();
         Closing += (_, e) => e.Cancel = acting;
+    }
+
+    private void OnIntervalsSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged || NetworkInterval is null)
+            return;
+
+        // At narrow window widths the two related interval fields stack vertically.
+        var narrow = e.NewSize.Width < 480;
+        Grid.SetColumn(NetworkInterval, narrow ? 0 : 1);
+        Grid.SetRow(NetworkInterval, narrow ? 1 : 0);
+        IntervalsGrid.ColumnDefinitions[1].Width = narrow ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        NetworkInterval.Margin = narrow ? new Thickness(0, 10, 0, 0) : new Thickness(16, 0, 0, 0);
     }
 
     private void UpdatePauseButton() => PauseButton.Content = model.Settings.Paused ? "Resume" : "Pause";
@@ -127,15 +142,13 @@ public partial class IndexWindow : Window
 
     private async void OnRebuild(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show(this, "Clear the current index and scan all selected folders again?", Title,
-            MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+        if (ConfirmationDialog.Ask(this, "Clear the current index and scan all selected folders again?"))
             await ExecuteAsync(() => model.ResetIndexAsync(rebuild: true));
     }
 
     private async void OnClear(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show(this, "Remove all indexed content and pause indexing? Original files and folder choices are kept.",
-            Title, MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+        if (ConfirmationDialog.Ask(this, "Remove all indexed content and pause indexing? Original files and folder choices are kept."))
             await ExecuteAsync(() => model.ResetIndexAsync(rebuild: false));
     }
 

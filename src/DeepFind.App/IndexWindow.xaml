@@ -5,80 +5,217 @@
         WindowStartupLocation="CenterOwner" FontFamily="Segoe UI" FontSize="14"
         Background="{DynamicResource Surface}" Foreground="{DynamicResource Ink}">
     <Window.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Padding" Value="11,5" />
-            <Setter Property="Margin" Value="0,0,6,5" />
+        <Style x:Key="FieldLabel" TargetType="Label">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+            <Setter Property="Padding" Value="0,0,0,3" />
         </Style>
-        <Style TargetType="Label"><Setter Property="Padding" Value="0,7,0,4" /></Style>
-        <Style TargetType="TextBox"><Setter Property="Padding" Value="5,3" /></Style>
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+        </Style>
+        <Style x:Key="HelpText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Secondary}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
     </Window.Resources>
-    <Grid Margin="16">
+    <Grid Margin="20,12,20,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TabControl x:Name="Tabs">
-            <TabItem Header="Folders">
-                <DockPanel Margin="12">
-                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,5">
-                        <Button Content="Add folder…" Click="OnAddFolder" />
-                        <Button Content="Remove folder" Click="OnRemoveFolder" />
-                    </WrapPanel>
-                    <ListBox x:Name="FolderList" AutomationProperties.Name="Indexed folders"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+        <TabControl x:Name="Tabs" Style="{StaticResource SoftTabs}">
+            <TabItem Header="Folders" Style="{StaticResource SoftTab}" MinWidth="90">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <TextBlock Text="Indexed folders" FontSize="14" FontWeight="SemiBold" />
+                        <TextBlock Text="Choose the locations DeepFind will search." Style="{StaticResource HelpText}" Margin="0,3,0,12" />
+                        <WrapPanel>
+                            <Button Content="Add folder…" Click="OnAddFolder" Style="{StaticResource PrimaryButton}" Margin="0,0,8,4"
+                                    MinWidth="112" AutomationProperties.Name="Add folder" />
+                            <Button Content="Remove folder" Click="OnRemoveFolder" MinWidth="124" Margin="0,0,0,4">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource SoftButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedItem, ElementName=FolderList}" Value="{x:Null}">
+                                                <Setter Property="IsEnabled" Value="False" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </WrapPanel>
+                    </StackPanel>
+                    <Grid>
+                        <ListBox x:Name="FolderList" Style="{StaticResource SoftListBox}" AutomationProperties.Name="Indexed folders"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="24" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                        <Path Data="M 2,4 L 7,4 L 9,6 L 14,6 L 14,13 L 2,13 Z"
+                                              Stroke="{DynamicResource Ink}" StrokeThickness="1.3" StrokeLineJoin="Round"
+                                              VerticalAlignment="Center" Width="16" Height="16" Stretch="None" />
+                                        <TextBlock Grid.Column="1" Text="{Binding}" ToolTip="{Binding}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Text="No folders added yet." HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource HelpText}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasItems, ElementName=FolderList}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Status">
-                <DockPanel Margin="12">
-                    <TextBlock DockPanel.Dock="Top" Text="{Binding IndexMessage}" Margin="0,0,0,8" />
-                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,7">
-                        <Button Content="Update now" Click="OnUpdate" />
-                        <Button x:Name="PauseButton" Content="Pause" Click="OnPause" />
-                        <Button Content="Retry selected file" Click="OnRetry" />
-                        <Button Content="Rebuild index" Click="OnRebuild" />
-                        <Button Content="Clear index" Click="OnClear" />
-                    </WrapPanel>
-                    <ListBox x:Name="IssuesList" ItemsSource="{Binding Issues}" AutomationProperties.Name="Index notices"
+            <TabItem Header="Status" Style="{StaticResource SoftTab}" MinWidth="82">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+                        <DockPanel LastChildFill="True" Margin="0,0,0,13">
+                            <Path DockPanel.Dock="Left" Width="16" Height="16" Stretch="None" Stroke="{DynamicResource Ink}"
+                                  StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Margin="0,0,8,0" VerticalAlignment="Center">
+                                <Path.Style>
+                                    <Style TargetType="Path">
+                                        <Setter Property="Data" Value="M 3,8 L 6,11 L 13,4" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Busy}" Value="True">
+                                                <Setter Property="Data" Value="M 2,8 L 6,4 L 10,8 L 6,12 Z M 10,8 L 14,8" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Settings.Paused}" Value="True">
+                                                <Setter Property="Data" Value="M 6,4 L 6,12 M 10,4 L 10,12" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IndexMessage}" Value="Index update failed. Retry from Index settings.">
+                                                <Setter Property="Data" Value="M 8,2 L 15,14 L 1,14 Z M 8,6 L 8,10 M 8,12 L 8,13" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IndexMessage}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Path.Style>
+                            </Path>
+                            <TextBlock Text="{Binding IndexMessage}" FontWeight="SemiBold" TextWrapping="Wrap"
+                                       AutomationProperties.LiveSetting="Polite" />
+                        </DockPanel>
+                        <WrapPanel>
+                            <Button Content="Update now" Click="OnUpdate" Style="{StaticResource PrimaryButton}" Margin="0,0,8,4" MinWidth="104" />
+                            <Button x:Name="PauseButton" Content="Pause" Click="OnPause" Margin="0,0,8,4" MinWidth="75">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource SoftButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Settings.Paused}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource Primary}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource OnPrimary}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Primary}" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Content="Retry selected file" Click="OnRetry" Style="{StaticResource SoftButton}" Margin="0,0,0,4" MinWidth="136" />
+                        </WrapPanel>
+                        <TextBlock Text="File notices" Style="{StaticResource SectionTitle}" Margin="0,10,0,0" />
+                    </StackPanel>
+                    <!-- Keep potentially destructive maintenance commands separate from everyday actions. -->
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                            Padding="0,12,0,0" Margin="0,12,0,0">
+                        <WrapPanel>
+                            <StackPanel Margin="0,0,12,6" MinWidth="240" VerticalAlignment="Center">
+                                <TextBlock Text="Index maintenance" Style="{StaticResource SectionTitle}" />
+                                <TextBlock Text="Rebuild or clear the local index." Style="{StaticResource HelpText}" Margin="0,3,0,0" />
+                            </StackPanel>
+                            <Button Content="Rebuild index" Click="OnRebuild" Style="{StaticResource SoftButton}" MinWidth="112" Margin="0,0,8,6" />
+                            <Button Content="Clear index" Click="OnClear" Style="{StaticResource SoftButton}" MinWidth="119" Margin="0,0,0,6" />
+                        </WrapPanel>
+                    </Border>
+                    <ListBox x:Name="IssuesList" Style="{StaticResource SoftListBox}" ItemsSource="{Binding Issues}" AutomationProperties.Name="Index notices"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="3,3,3,7">
-                                    <TextBlock Text="{Binding File.Path}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding Issue}" TextWrapping="Wrap" />
-                                </StackPanel>
+                                <Border Padding="0,2,0,8" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Line}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding File.Path}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding Issue}" FontSize="13" Foreground="{DynamicResource Secondary}" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                    </StackPanel>
+                                </Border>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Preferences">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12">
-                        <Label Content="Maximum file size (MB)" Target="{Binding ElementName=MaxSize}" />
-                        <TextBox x:Name="MaxSize" MaxLength="5" />
-                        <CheckBox x:Name="IncludeOther" Content="Include other file types in name and path results" Margin="0,10,0,0" />
-                        <Label Content="Exclude paths or names (one pattern per line, * and ? supported)" Target="{Binding ElementName=Exclusions}" />
-                        <TextBox x:Name="Exclusions" AcceptsReturn="True" Height="70" VerticalScrollBarVisibility="Auto" />
-                        <Label Content="Check local folders every (hours)" Target="{Binding ElementName=LocalHours}" />
-                        <TextBox x:Name="LocalHours" MaxLength="3" />
-                        <Label Content="Check network folders every (hours)" Target="{Binding ElementName=NetworkHours}" />
-                        <TextBox x:Name="NetworkHours" MaxLength="3" />
-                        <Label Content="Index storage parent folder (takes effect on restart)" Target="{Binding ElementName=IndexLocation}" />
+            <TabItem Header="Preferences" Style="{StaticResource SoftTab}" MinWidth="114">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="Indexing" Style="{StaticResource SectionTitle}" Margin="0,0,0,10" />
+                        <Label Content="Maximum file size (MB)" Target="{Binding ElementName=MaxSize}" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="MaxSize" Style="{StaticResource SoftTextBox}" MaxLength="5" />
+                        <CheckBox x:Name="IncludeOther" Style="{StaticResource SoftCheckBox}" Margin="0,12,0,10">
+                            <TextBlock Text="Include other file types in name and path results" TextWrapping="Wrap" />
+                        </CheckBox>
+                        <Label Target="{Binding ElementName=Exclusions}" Style="{StaticResource FieldLabel}">
+                            <TextBlock Text="Exclude paths or names (one pattern per line, * and ? supported)" TextWrapping="Wrap" />
+                        </Label>
+                        <TextBox x:Name="Exclusions" Style="{StaticResource SoftTextBox}" AcceptsReturn="True" MinHeight="51"
+                                 MaxHeight="80" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" />
+                        <Grid Margin="0,12,0,0" x:Name="IntervalsGrid" SizeChanged="OnIntervalsSizeChanged">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <StackPanel>
+                                <Label Target="{Binding ElementName=LocalHours}" Style="{StaticResource FieldLabel}">
+                                    <TextBlock Text="Check local folders every (hours)" TextWrapping="Wrap" />
+                                </Label>
+                                <TextBox x:Name="LocalHours" Style="{StaticResource SoftTextBox}" MaxLength="3" />
+                            </StackPanel>
+                            <StackPanel x:Name="NetworkInterval" Grid.Column="1" Margin="16,0,0,0">
+                                <Label Target="{Binding ElementName=NetworkHours}" Style="{StaticResource FieldLabel}">
+                                    <TextBlock Text="Check network folders every (hours)" TextWrapping="Wrap" />
+                                </Label>
+                                <TextBox x:Name="NetworkHours" Style="{StaticResource SoftTextBox}" MaxLength="3" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,12,0,12" />
+                        <TextBlock Text="Storage &amp; appearance" Style="{StaticResource SectionTitle}" Margin="0,0,0,8" />
+                        <Label Target="{Binding ElementName=IndexLocation}" Style="{StaticResource FieldLabel}">
+                            <TextBlock Text="Index storage parent folder (takes effect on restart)" TextWrapping="Wrap" />
+                        </Label>
                         <DockPanel>
-                            <Button DockPanel.Dock="Right" Content="Browse…" Click="OnBrowseIndex" Margin="6,0,0,0" />
-                            <TextBox x:Name="IndexLocation" />
+                            <Button DockPanel.Dock="Right" Content="Browse…" Click="OnBrowseIndex" Style="{StaticResource SoftButton}"
+                                    MinWidth="99" Margin="8,0,0,0" MinHeight="29" />
+                            <TextBox x:Name="IndexLocation" Style="{StaticResource SoftTextBox}" />
                         </DockPanel>
-                        <TextBlock x:Name="StorageNote" TextWrapping="Wrap" Margin="0,7,0,0" />
-                        <Label Content="Appearance" Target="{Binding ElementName=ThemeChoice}" />
-                        <ComboBox x:Name="ThemeChoice" />
+                        <TextBlock x:Name="StorageNote" Style="{StaticResource HelpText}" Margin="0,8,0,8" />
+                        <Label Content="Appearance" Target="{Binding ElementName=ThemeChoice}" Style="{StaticResource FieldLabel}" Margin="0,8,0,0" />
+                        <ComboBox x:Name="ThemeChoice" Style="{StaticResource SoftComboBox}" AutomationProperties.Name="Appearance" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
         </TabControl>
-        <TextBlock x:Name="Feedback" Grid.Row="1" TextWrapping="Wrap" Margin="0,8,0,0"
-                   AutomationProperties.LiveSetting="Polite" />
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <Button x:Name="ApplyButton" Content="Apply changes" Click="OnApply" />
-            <Button Content="Close" IsCancel="True" Margin="0,0,0,5" />
+        <TextBlock x:Name="Feedback" Grid.Row="1" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="12"
+                   Foreground="{DynamicResource Secondary}" AutomationProperties.LiveSetting="Polite">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Style.Triggers>
+                        <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed" /></Trigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="ApplyButton" Content="Apply changes" Click="OnApply" Style="{StaticResource PrimaryButton}"
+                    MinWidth="125" Margin="0,0,8,0" />
+            <Button Content="Close" IsCancel="True" Style="{StaticResource SoftButton}" MinWidth="74" />
         </StackPanel>
     </Grid>
 </Window>
