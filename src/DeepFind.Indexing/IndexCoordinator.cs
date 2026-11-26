@@ -62,17 +62,18 @@ public sealed class IndexCoordinator(ISearchIndex index, TrackingStore tracking)
     private void Reconcile(Settings settings, IProgress<IndexProgress>? progress, CancellationToken token,
         IReadOnlyCollection<string>? activeRoots, string? retryPath)
     {
-        var generation = tracking.RequestScan();
+        var (generation, hadPendingWork) = tracking.BeginScan();
         var previous = tracking.Load();
         var existing = index.GetVersions();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var blocked = new HashSet<string>(StringComparer.Ordinal);
         var updates = new List<FileState>();
         var removals = new List<string>();
-        var roots = activeRoots ?? settings.Folders;
+        var roots = hadPendingWork ? settings.Folders : activeRoots ?? settings.Folders;
         var progressTimer = Stopwatch.StartNew();
         var discovered = 0;
         var errors = 0;
+        var updated = 0;
 
         foreach (var path in Discover(roots, settings, blocked, token))
         {
@@ -95,8 +96,10 @@ public sealed class IndexCoordinator(ISearchIndex index, TrackingStore tracking)
                     if (old.Unavailable)
                         updates.Add(old with { Unavailable = false });
                     if (updates.Count == BatchSize) Flush();
+                    ReportProgress();
                     continue;
                 }
+                updated++;
                 state = Publish(version, settings, token, unchanged);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -112,11 +115,7 @@ public sealed class IndexCoordinator(ISearchIndex index, TrackingStore tracking)
                 errors++;
             if (updates.Count == BatchSize)
                 Flush();
-            if (progress is not null && progressTimer.ElapsedMilliseconds >= 120)
-            {
-                progress.Report(new(discovered, discovered, errors, "Indexing files"));
-                progressTimer.Restart();
-            }
+            ReportProgress();
         }
 
         foreach (var id in existing.Keys.Union(previous.Keys, StringComparer.Ordinal))
@@ -142,8 +141,17 @@ public sealed class IndexCoordinator(ISearchIndex index, TrackingStore tracking)
 
         Flush();
         tracking.CompleteScan(generation);
-        progress?.Report(new(discovered, discovered, errors + blocked.Count, "Index is up to date"));
+        progress?.Report(new(discovered, discovered, errors + blocked.Count, "Index is up to date", updated));
         return;
+
+        void ReportProgress()
+        {
+            if (progress is null || progressTimer.ElapsedMilliseconds < 120)
+                return;
+            progress.Report(new(discovered, discovered, errors, updated == 0 ?
+                "Checking indexed folders" : "Indexing files", updated));
+            progressTimer.Restart();
+        }
 
         void Flush()
         {

@@ -269,7 +269,7 @@
                 <ControlTemplate TargetType="ListBox">
                     <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
-                        <ScrollViewer x:Name="PART_ScrollViewer" Focusable="False" Padding="{TemplateBinding Padding}"
+                        <ScrollViewer x:Name="PART_ScrollViewer" Focusable="False" Padding="3,3,19,3"
                                       CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
                                       HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
                                       VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
@@ -286,8 +286,8 @@
         <Setter Property="Foreground" Value="{DynamicResource Secondary}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="MinHeight" Value="28" />
-        <Setter Property="Padding" Value="13,4" />
-        <Setter Property="Margin" Value="0,0,4,4" />
+        <Setter Property="Padding" Value="9,4" />
+        <Setter Property="Margin" Value="0,0,2,4" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>

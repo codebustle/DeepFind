@@ -35,8 +35,15 @@ jobs:
 
           $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
           Invoke-Installer /i deepfind-install.log
+          $shortcutPath = Join-Path ([Environment]::GetFolderPath('Programs')) 'DeepFind.lnk'
           try {
-            $process = Start-Process $application -PassThru
+            if (-not (Test-Path $shortcutPath)) { throw "Start Menu shortcut is missing: $shortcutPath" }
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcut = $shell.CreateShortcut($shortcutPath)
+            if ($shortcut.TargetPath -ne $application -or -not (Test-Path $shortcut.TargetPath)) {
+              throw "Start Menu shortcut target does not resolve to the installed application."
+            }
+            $process = Start-Process $shortcut.TargetPath -PassThru
             try {
               $deadline = (Get-Date).AddSeconds(45)
               do {
@@ -58,6 +65,7 @@ jobs:
             Invoke-Installer /x deepfind-uninstall.log
           }
           if (Test-Path $application) { throw "DeepFind executable remained after uninstall." }
+          if (Test-Path $shortcutPath) { throw "DeepFind Start Menu shortcut remained after uninstall." }
       - name: Upload installer logs on failure
         if: failure()
         uses: actions/upload-artifact@v4

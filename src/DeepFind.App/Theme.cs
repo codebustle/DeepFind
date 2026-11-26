@@ -51,7 +51,7 @@ internal static class Theme
             Set("Secondary", "#B9B9BB", "#555558");
             Set("ControlSurface", "#252627", "#EFEFF0");
             Set("Line", "#454648", "#C3C3C7");
-            Set("FocusEdge", "#E2E2E4", "#414147");
+            Set("FocusEdge", "#909194", "#414147");
             Set("HighlightFill", "#444448", "#E4E4EA");
             Set("HighlightInk", "#FAFAFA", "#171718");
             Set("Panel", "#1D1E20", "#FFFFFF");

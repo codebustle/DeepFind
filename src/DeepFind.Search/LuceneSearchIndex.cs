@@ -114,22 +114,54 @@ public sealed partial class LuceneSearchIndex : ISearchIndex
         var sort = request.Sort switch
         {
             SortOrder.Modified => new SortField("modified", SortFieldType.INT64, true),
+            SortOrder.ModifiedOldest => new SortField("modified", SortFieldType.INT64),
             SortOrder.Name => new SortField("nameExact", SortFieldType.STRING),
+            SortOrder.NameDescending => new SortField("nameExact", SortFieldType.STRING, true),
             SortOrder.Size => new SortField("size", SortFieldType.INT64, true),
+            SortOrder.SizeAscending => new SortField("size", SortFieldType.INT64),
             SortOrder.Path => new SortField("pathSort", SortFieldType.STRING),
-            _ => null
+            SortOrder.PathDescending => new SortField("pathSort", SortFieldType.STRING, true),
+            _ => SortField.FIELD_SCORE
         };
         cancellationToken.ThrowIfCancellationRequested();
-        TopDocsCollector<ScoreDoc> relevance = TopScoreDocCollector.Create(limit, false);
-        var sorted = sort is null ? null : TopFieldCollector.Create(
-            new Sort(sort, new SortField("id", SortFieldType.STRING)), limit, false, false, false, false);
-        ICollector collector = sorted is null ? relevance : sorted;
-        searcher.Search(query, filter, Collector.NewAnonymous(collector.SetScorer, doc =>
+        var ordering = new Sort(sort, new SortField("id", SortFieldType.STRING));
+        // Count and collect within the same committed reader. Only the requested page's
+        // stored documents are deserialized. Clamp a stale page after index shrinkage.
+        var counter = new TotalHitCountCollector();
+        Collect(counter);
+        var total = counter.TotalHits;
+        if (total == 0)
+            return new(0, [], 1);
+        var pageCount = (total - 1) / limit + 1;
+        var page = Math.Clamp(request.Page, 1, pageCount);
+        var offset = (page - 1) * limit;
+        var count = Math.Min(limit, total - offset);
+        // Lucene search-after advances in bounded chunks, even for deep pages. The
+        // unique id tie-break makes relevance and every explicit sort deterministic.
+        FieldDoc? after = null;
+        TopDocs top;
+        var skipped = 0;
+        do
         {
             cancellationToken.ThrowIfCancellationRequested();
-            collector.Collect(doc);
-        }, collector.SetNextReader, () => collector.AcceptsDocsOutOfOrder));
-        var top = sorted is null ? relevance.GetTopDocs() : sorted.GetTopDocs();
+            var take = skipped < offset ? Math.Min(1000, offset - skipped) : count;
+            var collector = TopFieldCollector.Create(ordering, take, after, true, false, false, false);
+            Collect(collector);
+            top = collector.GetTopDocs();
+            if (skipped >= offset)
+                break;
+            skipped += top.ScoreDocs.Length;
+            if (top.ScoreDocs.Length == 0)
+                throw new InvalidOperationException("The committed search snapshot changed unexpectedly.");
+            after = (FieldDoc)top.ScoreDocs[^1];
+        } while (true);
+
+        void Collect(ICollector collector) => searcher.Search(query, filter,
+            Collector.NewAnonymous(collector.SetScorer, doc =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                collector.Collect(doc);
+            }, collector.SetNextReader, () => collector.AcceptsDocsOutOfOrder));
 
         var words = MatchTerms(highlights);
         var exact = phrases.Length == 0 ? null : new Regex(
@@ -144,7 +176,7 @@ public sealed partial class LuceneSearchIndex : ISearchIndex
             var (snippet, location) = Snippet(parts, exact, words);
             hits.Add(new(ReadFile(doc), snippet, location, highlights));
         }
-        return new(top.TotalHits, hits);
+        return new(total, hits, page);
     }
 
     public string ReadPreview(SearchHit hit)

@@ -22,10 +22,44 @@ public partial class MainWindow : Window
         InitializeComponent();
         Theme.AttachWindow(this);
         DataContext = model;
+        model.PropertyChanged += OnModelChanged;
         SystemEvents.UserPreferenceChanged += OnPreferencesChanged;
     }
 
-    public SortOrder[] SortOptions { get; } = Enum.GetValues<SortOrder>();
+    public sealed record SortChoice(SortOrder Value, string Label);
+    public SortChoice[] SortOptions { get; } =
+    [
+        new(SortOrder.Relevance, "Relevance"), new(SortOrder.Modified, "Modified — newest"),
+        new(SortOrder.ModifiedOldest, "Modified — oldest"), new(SortOrder.Name, "Name — A to Z"),
+        new(SortOrder.NameDescending, "Name — Z to A"), new(SortOrder.Size, "Size — largest"),
+        new(SortOrder.SizeAscending, "Size — smallest"), new(SortOrder.Path, "Path — A to Z"),
+        new(SortOrder.PathDescending, "Path — Z to A")
+    ];
+    public int[] PageSizes => MainViewModel.PageSizes;
+
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.Results))
+        {
+            ResultsList.SelectedIndex = -1;
+            if (ResultsList.HasItems) ResultsList.ScrollIntoView(ResultsList.Items[0]);
+        }
+    }
+
+    private void OnFirstPage(object sender, RoutedEventArgs e) => model.Navigate(1);
+    private void OnPreviousPage(object sender, RoutedEventArgs e) => model.Navigate(model.Page - 1);
+    private void OnNextPage(object sender, RoutedEventArgs e) => model.Navigate(model.Page + 1);
+    private void OnLastPage(object sender, RoutedEventArgs e) => model.Navigate(model.PageCount);
+    private void OnView(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
+    private void OnRestoreView(object sender, RoutedEventArgs e) => model.RestoreView();
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -36,7 +70,6 @@ public partial class MainWindow : Window
     private void OnPreferencesChanged(object sender, UserPreferenceChangedEventArgs e) =>
         Dispatcher.InvokeAsync(() => Theme.Apply(model.Settings.Theme));
 
-    private void OnSearch(object sender, RoutedEventArgs e) => model.QueueSearch(delay: false);
     private void OnClearSearch(object sender, RoutedEventArgs e)
     {
         // Clear only the query; keep the selected filter and sort and refresh results immediately.
@@ -211,6 +244,7 @@ public partial class MainWindow : Window
             return;
         closing = true;
         SystemEvents.UserPreferenceChanged -= OnPreferencesChanged;
+        model.PropertyChanged -= OnModelChanged;
         IsEnabled = false;
         try { await model.CloseAsync(); }
         finally { allowClose = true; Close(); }

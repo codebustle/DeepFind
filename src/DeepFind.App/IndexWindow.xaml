@@ -27,7 +27,7 @@
             <RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <TabControl x:Name="Tabs" Style="{StaticResource SoftTabs}">
-            <TabItem Header="Folders" Style="{StaticResource SoftTab}" MinWidth="90">
+            <TabItem Header="Folders" Style="{StaticResource SoftTab}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
                         <TextBlock Text="Indexed folders" FontSize="14" FontWeight="SemiBold" />
@@ -78,7 +78,7 @@
                     </Grid>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Status" Style="{StaticResource SoftTab}" MinWidth="82">
+            <TabItem Header="Status" Style="{StaticResource SoftTab}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                         <DockPanel LastChildFill="True" Margin="0,0,0,13">
@@ -155,9 +155,9 @@
                     </ListBox>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Preferences" Style="{StaticResource SoftTab}" MinWidth="114">
+            <TabItem Header="Preferences" Style="{StaticResource SoftTab}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel>
+                    <StackPanel Margin="0,0,18,0">
                         <TextBlock Text="Indexing" Style="{StaticResource SectionTitle}" Margin="0,0,0,10" />
                         <Label Content="Maximum file size (MB)" Target="{Binding ElementName=MaxSize}" Style="{StaticResource FieldLabel}" />
                         <TextBox x:Name="MaxSize" Style="{StaticResource SoftTextBox}" MaxLength="5" />
