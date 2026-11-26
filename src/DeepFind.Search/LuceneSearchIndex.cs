@@ -10,6 +10,11 @@ using Lucene.Net.Util;
 
 namespace DeepFind.Search;
 
+public sealed class SearchIndexTruncatedException(Exception innerException)
+    : IOException("The local search index is truncated.", innerException)
+{
+}
+
 public sealed partial class LuceneSearchIndex : ISearchIndex
 {
     private const LuceneVersion Version = LuceneVersion.LUCENE_48;
@@ -28,11 +33,16 @@ public sealed partial class LuceneSearchIndex : ISearchIndex
             writer.Commit();
             readers = new SearcherManager(directory, null);
         }
-        catch
+        catch (Exception error)
         {
             writer?.Rollback();
             directory.Dispose();
             analyzer.Dispose();
+            // A truncated segment manifest may surface as EndOfStreamException
+            // instead of Lucene's corruption exceptions. Distinguish it from
+            // unrelated I/O errors so the app can offer explicit recovery.
+            if (error is EndOfStreamException)
+                throw new SearchIndexTruncatedException(error);
             throw;
         }
     }

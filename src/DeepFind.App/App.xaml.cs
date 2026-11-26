@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using DeepFind.Infrastructure;
+using DeepFind.Search;
 using Lucene.Net.Index;
 using Serilog;
 
@@ -37,7 +38,7 @@ public partial class App : Application
             var directory = store.IndexDirectory(settings);
             MainViewModel model;
             try { model = new(store, settings, directory); }
-            catch (Exception error) when (error is CorruptIndexException or IndexFormatTooOldException or IndexFormatTooNewException)
+            catch (Exception error) when (error is CorruptIndexException or IndexFormatTooOldException or IndexFormatTooNewException or SearchIndexTruncatedException)
             {
                 var answer = MessageBox.Show("The search index cannot be read. Remove the damaged search index and rebuild from your selected folders?",
                     "DeepFind", MessageBoxButton.YesNo, MessageBoxImage.Warning);

@@ -49,9 +49,9 @@ try {
     $null = Wait-For 'no match' { (Assert-Page 'Page 0 / 0') -and (By-Name $main 'No matching files.') }
     Invoke-Control (By-Id $main ClearQueryButton)
     $null = Wait-For 'clear restores result pages' { Assert-Page 'Page 1 / 2' }
-    Select-Combo $main PageSize '100'
+    Select-Combo $main PageSize '100' 1
     $null = Wait-For '100 per page' { (Assert-Page 'Page 1 / 1') -and (Read-Settings).PageSize -eq 100 }
-    Select-Combo $main PageSize '50'
+    Select-Combo $main PageSize '50' 0
     $null = Wait-For '50 per page' { (Assert-Page 'Page 1 / 2') -and (Read-Settings).PageSize -eq 50 }
     Select-Combo $main SortBox 'Name — Z to A' 4
     $null = Wait-For 'name descending renders expected first file' {

@@ -57,7 +57,12 @@ function Click-TestControl($Element) {
     [DeepFindTestPointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
 }
 function Select-Combo($Root, [string]$Id, [string]$Label, [int]$KeyboardIndex=-1) {
-    $combo = By-Id $Root $Id
+    $combo = Wait-For "visible enabled combo $Id" {
+        try {
+            $item = By-Id $Root $Id
+            if ($item -and -not $item.Current.IsOffscreen -and $item.Current.IsEnabled) { $item }
+        } catch [System.Windows.Automation.ElementNotAvailableException] { }
+    }
     Write-Host "Selecting $Id option '$Label'."
     $expand = Require-Pattern $combo ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
     if ($KeyboardIndex -ge 0) {

@@ -72,6 +72,25 @@ public sealed class Workflows : IDisposable
     }
 
     [Fact]
+    public async Task TruncatedSearchManifestIsReportedAsRecoverableCorruption()
+    {
+        Directory.CreateDirectory(Source);
+        var original = FilePath("original.txt");
+        File.WriteAllText(original, "recoverableoriginal");
+        using (var index = OpenIndex())
+            await new IndexCoordinator(index, new(Data)).ReconcileAsync(Options, null, TestContext);
+
+        var manifest = Assert.Single(Directory.GetFiles(Path.Combine(Data, "Search"), "segments_*"));
+        File.WriteAllBytes(manifest, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        var failure = Assert.Throws<SearchIndexTruncatedException>(() =>
+        {
+            using var _ = OpenIndex();
+        });
+        Assert.IsType<EndOfStreamException>(failure.InnerException);
+        Assert.Equal("recoverableoriginal", File.ReadAllText(original));
+    }
+
+    [Fact]
     public async Task ReconciliationHandlesChangesRenamesOfflineRootsAndConfirmedDeletes()
     {
         Directory.CreateDirectory(Source);
