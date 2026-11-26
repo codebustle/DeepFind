@@ -32,15 +32,21 @@ function By-Id($Root, [string]$Id) {
 function By-Name($Root, [string]$Name) {
     $Root.FindFirst($scope, ([System.Windows.Automation.PropertyCondition]::new($ae::NameProperty, $Name)))
 }
+function Require-Pattern($Element, $Pattern) {
+    if (-not $Element) { throw "Missing control for pattern $($Pattern.ProgrammaticName)." }
+    $value = $null
+    if ($Element.TryGetCurrentPattern($Pattern, [ref]$value)) { return $value }
+    $actual = ($Element.GetSupportedPatterns() | ForEach-Object ProgrammaticName) -join ', '
+    throw "Control '$($Element.Current.Name)' ($($Element.Current.ControlType.ProgrammaticName), id=$($Element.Current.AutomationId)) does not expose $($Pattern.ProgrammaticName). Actual: $actual."
+}
 function Invoke-Control($Element) {
-    if (-not $Element) { throw 'Cannot invoke missing control.' }
-    $Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    (Require-Pattern $Element ([System.Windows.Automation.InvokePattern]::Pattern)).Invoke()
 }
 function Set-Text($Element, [string]$Value) {
-    $Element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($Value)
+    (Require-Pattern $Element ([System.Windows.Automation.ValuePattern]::Pattern)).SetValue($Value)
 }
 function Select-Tab($Element) {
-    $Element.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+    (Require-Pattern $Element ([System.Windows.Automation.SelectionItemPattern]::Pattern)).Select()
 }
 function Assert-Page([string]$Expected) {
     $label = By-Id $script:main PageLabel
@@ -60,14 +66,14 @@ function Find-AppElement([string]$Name) {
 }
 function Select-Combo($Root, [string]$Id, [string]$Label) {
     $combo = By-Id $Root $Id
-    $combo.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+    Write-Host "Selecting $Id option '$Label'."
+    $expand = Require-Pattern $combo ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+    $expand.Expand()
     $item = Wait-For "combo option $Label" {
-        $result = By-Name $combo $Label
-        if ($result) { $result }
-        else { Find-AppControl $Label ([System.Windows.Automation.ControlType]::ListItem) }
+        Find-AppControl $Label ([System.Windows.Automation.ControlType]::ListItem)
     }
     Select-Tab $item
-    $combo.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Collapse()
+    if ($expand.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Expanded) { $expand.Collapse() }
 }
 function Read-Settings {
     Get-Content $settingsPath -Raw | ConvertFrom-Json
@@ -173,6 +179,10 @@ try {
     if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw 'App did not close cleanly after UI scenario.'
     }
+} catch {
+    Write-Host "UI failure: $($_.ScriptStackTrace)"
+    if ($main) { try { Capture-Window $main 'failure' } catch { Write-Host "Screenshot unavailable: $_" } }
+    throw
 } finally {
     if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
 }

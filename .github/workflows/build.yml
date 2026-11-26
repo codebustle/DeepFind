@@ -81,6 +81,24 @@ jobs:
           if (Test-Path $desktopPath) { throw "Owned Desktop shortcut remained after uninstall." }
           & powershell.exe -NoProfile -File tests/WindowsInstallerUi.ps1 -Msi $msi[0].FullName
           if ($LASTEXITCODE -ne 0) { throw "Interactive installer UI test failed." }
+      - name: Check out immutable V2 baseline
+        uses: actions/checkout@v4
+        with:
+          ref: 14f027a5c42bf2cb8b03b54e49410e08384d0de7
+          path: baseline-v2
+      - name: Build V2 installer for upgrade scenario
+        working-directory: baseline-v2
+        run: |
+          dotnet publish src/DeepFind.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
+          dotnet build installer/DeepFind.Installer.wixproj -c Release
+      - name: Upgrade from V2, repair and verify data preservation
+        shell: pwsh
+        run: |
+          $old = @(Get-ChildItem baseline-v2/installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          $new = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($old.Count -ne 1 -or $new.Count -ne 1) { throw 'Expected exactly one MSI per version.' }
+          & powershell.exe -NoProfile -File tests/WindowsUpgrade.ps1 -PreviousMsi $old[0].FullName -CandidateMsi $new[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Upgrade and repair matrix failed.' }
       - name: Collect app logs on failure
         if: failure()
         shell: pwsh
