@@ -60,6 +60,15 @@ public sealed class Workflows : IDisposable
         Assert.Throws<FormatException>(() => Search(reopened, "ext:pdf OR"));
         Assert.Throws<FormatException>(() => Search(reopened, "notes*"));
         Assert.Throws<FormatException>(() => Search(reopened, "\"unterminated"));
+        // Reuse the exact validated document fixtures for native Windows acceptance tests.
+        if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true" &&
+            Environment.GetEnvironmentVariable("RUNNER_TEMP") is { Length: > 0 } runnerTemp)
+        {
+            var target = Path.Combine(runnerTemp, "deepfind-ui-formats");
+            Directory.CreateDirectory(target);
+            foreach (var file in Directory.EnumerateFiles(Source))
+                File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
+        }
     }
 
     [Fact]
