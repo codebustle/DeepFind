@@ -227,6 +227,69 @@ try {
     $null = Wait-For 'declined Clear retains result set' { Assert-Page 'Page 1 / 2' }
     Capture-Window $main 'light-results'
     Write-Host 'UI smoke: live search, paging boundaries and sizes, name sorting, View flags and restore, settings tabs, invalid input, theme, pause/resume and cancelled Clear passed.'
+
+    # Exercise result keyboard actions against an actual installed application and disposable file.
+    Add-Type -AssemblyName System.Windows.Forms
+    Set-Text (By-Id $main SearchBox) 'uniqueuiword'
+    $null = Wait-For 'unique file visible' { (Assert-Page 'Page 1 / 1') -and (By-Name $main 'document-050.txt') }
+    (By-Id $main SearchBox).SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+    $null = Wait-For 'first result selected by keyboard' {
+        $row = By-Name (By-Id $main ResultsList) 'document-050.txt'
+        if ($row) {
+            $sel = $null
+            if ($row.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$sel)) { $sel.Current.IsSelected }
+        }
+    }
+    [System.Windows.Forms.SendKeys]::SendWait('^c')
+    $expectedPath = Join-Path $fixture 'document-050.txt'
+    $null = Wait-For 'clipboard contains exact selected file path' { (Get-Clipboard -Raw) -eq $expectedPath }
+    [System.Windows.Forms.SendKeys]::SendWait('^p')
+    $preview = Wait-For 'preview window for selected file' { Find-AppElement 'document-050.txt' }
+    $null = Wait-For 'preview identifies selected source' { By-Name $preview $expectedPath }
+    Capture-Window $preview 'light-preview'
+    Invoke-Control (By-Name $preview 'Close')
+    $null = Wait-For 'preview closes' { -not (Find-AppElement 'document-050.txt') }
+    Write-Host 'Installed keyboard selection, clipboard path and file preview passed.'
+
+    # Exercise real local watcher notifications, not manually requested updates.
+    $watchPath = Join-Path $fixture 'watcher-added.txt'
+    $renamedPath = Join-Path $fixture 'watcher-renamed.txt'
+    Set-Text (By-Id $main SearchBox) 'watcherfirstword'
+    $null = Wait-For 'watcher fixture initially absent' { Assert-Page 'Page 0 / 0' }
+    Set-Content -LiteralPath $watchPath 'watcherfirstword'
+    $null = Wait-For 'watcher detects creation' { (Assert-Page 'Page 1 / 1') -and (By-Name $main 'watcher-added.txt') } 60
+    Set-Content -LiteralPath $watchPath 'watchersecondword'
+    $null = Wait-For 'watcher removes old content' { Assert-Page 'Page 0 / 0' } 60
+    Set-Text (By-Id $main SearchBox) 'watchersecondword'
+    $null = Wait-For 'watcher indexes changed content' { (Assert-Page 'Page 1 / 1') -and (By-Name $main 'watcher-added.txt') }
+    Rename-Item -LiteralPath $watchPath -NewName 'watcher-renamed.txt'
+    $null = Wait-For 'watcher detects rename' { (By-Name $main 'watcher-renamed.txt') -and -not (By-Name $main 'watcher-added.txt') } 60
+    Remove-Item -LiteralPath $renamedPath
+    $null = Wait-For 'watcher removes deleted file' { Assert-Page 'Page 0 / 0' } 60
+    Invoke-Control (By-Id $main ClearQueryButton)
+    $null = Wait-For 'original results retained' { Assert-Page 'Page 1 / 2' }
+    Write-Host 'Installed local watcher create, modify, rename and delete passed.'
+
+    Invoke-Control (By-Id $main IndexSettingsButton)
+    $settings = Wait-For 'Index settings dialog for confirmed Clear' { Find-AppElement 'Index settings' }
+    Select-Tab (By-Name $settings 'Status')
+    Invoke-Control (By-Name $settings 'Clear index')
+    $yes = Wait-For 'clear confirmation Yes' { Find-AppControl 'Yes' ([System.Windows.Automation.ControlType]::Button) }
+    Invoke-Control $yes
+    $null = Wait-For 'confirmed Clear pauses and finishes' { (Read-Settings).Paused -eq $true -and (By-Name $settings 'Resume').Current.IsEnabled }
+    Invoke-Control (By-Name $settings 'Close')
+    $null = Wait-For 'confirmed clear removes indexed results' { Assert-Page 'Page 0 / 0' }
+    if (@(Get-ChildItem -LiteralPath $fixture -Filter 'document-*.txt' -File).Count -ne 51) { throw 'Clear changed the original source files.' }
+    Invoke-Control (By-Id $main IndexSettingsButton)
+    $settings = Wait-For 'Index settings dialog for Resume' { Find-AppElement 'Index settings' }
+    Select-Tab (By-Name $settings 'Status')
+    Invoke-Control (By-Name $settings 'Resume')
+    $null = Wait-For 'Resume persisted and finishes its settings action' { (Read-Settings).Paused -eq $false -and (By-Name $settings 'Pause').Current.IsEnabled }
+    Invoke-Control (By-Name $settings 'Close')
+    $null = Wait-For 'Resume restores original result set' { Assert-Page 'Page 1 / 2' } 90
+    Write-Host 'Confirmed Clear removes only index, preserves 51 originals and Resume restores search results.'
+
     if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw 'App did not close cleanly after UI scenario.'
     }

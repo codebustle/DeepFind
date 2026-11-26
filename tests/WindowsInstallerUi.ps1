@@ -6,6 +6,7 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type @'
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 public static class DeepFindInstallerPointer {
     [StructLayout(LayoutKind.Sequential)]
@@ -15,6 +16,23 @@ public static class DeepFindInstallerPointer {
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int maxCount);
+    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hwnd, int index);
+    [DllImport("user32.dll", SetLastError=true)] private static extern IntPtr SendMessageTimeout(IntPtr hwnd, uint message, UIntPtr wParam, IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
+    public static int NativeCheckState(IntPtr hwnd, IntPtr dialog) {
+        if (hwnd == IntPtr.Zero || GetAncestor(hwnd,2) != dialog)
+            throw new InvalidOperationException("Checkbox handle is outside its verified installer dialog.");
+        var cls = new StringBuilder(128);
+        GetClassName(hwnd, cls, cls.Capacity);
+        int style = GetWindowLong(hwnd, -16) & 15;
+        if (!string.Equals(cls.ToString(),"Button",StringComparison.OrdinalIgnoreCase) ||
+            (style != 2 && style != 3 && style != 4 && style != 5 && style != 6 && style != 9))
+            throw new InvalidOperationException("Native checkbox is not a standard checkable Button: "+cls+" style="+style);
+        UIntPtr result;
+        if (SendMessageTimeout(hwnd, 0x00F0, UIntPtr.Zero, IntPtr.Zero, 2, 1000, out result) == IntPtr.Zero)
+            throw new InvalidOperationException("Native checkbox state query timed out.");
+        return checked((int)result.ToUInt64());
+    }
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
 }
 '@
@@ -82,16 +100,28 @@ function Click-InstallerControl($Dialog, $Control) {
     [DeepFindInstallerPointer]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
     [DeepFindInstallerPointer]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
 }
-function Set-Checked($Dialog, $Control, [bool]$Checked) {
+function Get-CheckState($Dialog, $Control) {
     $toggle = $null
-    if (-not $Control.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$toggle)) {
-        throw "Installer checkbox '$($Control.Current.Name)' has no observable TogglePattern."
+    if ($Control.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$toggle)) {
+        return [int]$toggle.Current.ToggleState
     }
-    $desired = if ($Checked) { [System.Windows.Automation.ToggleState]::On } else { [System.Windows.Automation.ToggleState]::Off }
-    if ($toggle.Current.ToggleState -ne $desired) { Click-InstallerControl $Dialog $Control }
+    # Observed Windows Installer provider exposes its license checkbox as Pane,
+    # without TogglePattern. BM_GETCHECK is read-only and validates both HWND
+    # ancestry and standard checkable Button style before reading the state.
+    return [DeepFindInstallerPointer]::NativeCheckState(
+        [IntPtr]$Control.Current.NativeWindowHandle, [IntPtr]$Dialog.Current.NativeWindowHandle)
+}
+function Set-Checked($Dialog, $Control, [bool]$Checked) {
+    $expected = if ($Checked) { 1 } else { 0 }
+    $state = Get-CheckState $Dialog $Control
+    Write-Host "Installer checkbox '$($Control.Current.Name)' state=$state; expected=$expected."
+    if ($state -ne $expected) { Click-InstallerControl $Dialog $Control }
     $deadline = (Get-Date).AddSeconds(3)
     do {
-        if ($toggle.Current.ToggleState -eq $desired) { return }
+        if ((Get-CheckState $Dialog $Control) -eq $expected) {
+            Write-Host "Installer checkbox verified state=$expected."
+            return
+        }
         Start-Sleep -Milliseconds 100
     } while ((Get-Date) -lt $deadline)
     throw "Installer checkbox '$($Control.Current.Name)' failed to reach checked=$Checked."
