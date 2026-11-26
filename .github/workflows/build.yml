@@ -79,6 +79,8 @@ jobs:
             Invoke-Installer /x deepfind-desktop-uninstall.log
           }
           if (Test-Path $desktopPath) { throw "Owned Desktop shortcut remained after uninstall." }
+          & powershell.exe -NoProfile -File tests/WindowsInstallerUi.ps1 -Msi $msi[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw "Interactive installer UI test failed." }
       - name: Collect app logs on failure
         if: failure()
         shell: pwsh
@@ -93,6 +95,13 @@ jobs:
           path: |
             ${{ runner.temp }}/deepfind-*.log
             ${{ runner.temp }}/app-*.log
+          if-no-files-found: ignore
+      - name: Upload Windows UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ui-evidence
+          path: ${{ runner.temp }}/deepfind-ui-*.png
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:

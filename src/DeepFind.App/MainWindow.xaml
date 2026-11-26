@@ -10,6 +10,7 @@
         <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
         <Style x:Key="ResultItem" TargetType="ListBoxItem" BasedOn="{StaticResource SoftListItem}">
             <Setter Property="Padding" Value="0" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -106,7 +107,7 @@
                 <ComboBox x:Name="SortBox" MinWidth="119" Margin="8,0,0,4" VerticalAlignment="Center"
                           Style="{StaticResource SoftComboBox}" ItemsSource="{Binding SortOptions, RelativeSource={RelativeSource AncestorType=Window}}"
                           SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Sort}"
-                          AutomationProperties.Name="Sort results" />
+                          AutomationProperties.Name="Sort results" AutomationProperties.AutomationId="SortBox" />
                 <Button Content="View ▾" Click="OnView" Style="{StaticResource SoftButton}" Margin="4,0,0,4"
                         AutomationProperties.Name="Result view options" AutomationProperties.AutomationId="ViewOptions">
                     <Button.ContextMenu>
@@ -188,7 +189,7 @@
             <ListBox x:Name="ResultsList" ItemsSource="{Binding Results}" Background="Transparent" BorderThickness="0" Padding="0" ItemContainerStyle="{StaticResource ResultItem}"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True"
                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                     MouseDoubleClick="OnResultDoubleClick" PreviewMouseRightButtonDown="OnResultRightClick" AutomationProperties.Name="Search results">
+                     MouseDoubleClick="OnResultDoubleClick" PreviewMouseRightButtonDown="OnResultRightClick" AutomationProperties.Name="Search results" AutomationProperties.AutomationId="ResultsList">
                 <ListBox.Style>
                     <Style TargetType="ListBox" BasedOn="{StaticResource SoftListBox}">
                         <Style.Triggers>
@@ -221,7 +222,7 @@
                                     <TextBlock FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                ToolTip="{Binding Name}" local:HighlightText.Value="{Binding Name}"
                                                local:HighlightText.Terms="{Binding Hit.Highlights}" />
-                                    <TextBlock Text="{Binding FormatLabel}" FontSize="11" Foreground="{DynamicResource Secondary}" />
+                                    <TextBlock Text="{Binding FormatLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FormatLabel}" FontSize="11" Foreground="{DynamicResource Secondary}" />
                                     <TextBlock Text="{Binding PathText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}"
                                                Foreground="{DynamicResource Secondary}" Margin="0,3,0,0"
                                                Visibility="{Binding DataContext.ShowPath, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhenTrue}}" />
