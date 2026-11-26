@@ -26,6 +26,7 @@ New-Item -ItemType Directory -Path (Split-Path $settingsPath) -Force | Out-Null
 # Windows PowerShell emits a BOM when writing UTF8, which File.ReadAllText handles.
 
 . "$PSScriptRoot\WindowsUiHelpers.ps1"
+. "$PSScriptRoot\WindowsNativeDialogs.ps1"
 $process = Start-Process $Application -PassThru
 try {
     $main = Wait-For 'main window' {
@@ -288,10 +289,10 @@ try {
     Move-Item -LiteralPath $original -Destination $temporary
     try {
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-        $null = Wait-For 'unavailable file feedback' { Find-AppControl 'The file is currently unavailable.' ([System.Windows.Automation.ControlType]::Text) }
-        $ok = Wait-For 'unavailable file confirmation' { Find-AppControl 'OK' ([System.Windows.Automation.ControlType]::Button) }
-        Invoke-Control $ok
-        $null = Wait-For 'missing-file dialog dismissed' { -not (Find-AppControl 'The file is currently unavailable.' ([System.Windows.Automation.ControlType]::Text)) }
+        $dialog = Wait-For 'unavailable file feedback' { Find-NativeMessageDialog 'The file is currently unavailable.' }
+        Capture-Window $main 'light-unavailable-file'
+        Click-NativeMessageButton $dialog 'OK'
+        $null = Wait-For 'missing-file dialog dismissed' { -not (Find-NativeMessageDialog 'The file is currently unavailable.') }
         Write-Host 'Unavailable original produces understandable feedback without launching an absent file.'
     } finally {
         Move-Item -LiteralPath $temporary -Destination $original

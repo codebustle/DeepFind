@@ -4,6 +4,7 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
     throw 'This test requires a disposable GitHub Actions Windows runner.'
 }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+. "$PSScriptRoot\WindowsNativeDialogs.ps1"
 $ae = [System.Windows.Automation.AutomationElement]
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 $workspace = Join-Path $env:RUNNER_TEMP ('deepfind-recovery-' + [Guid]::NewGuid().ToString('N'))
@@ -193,16 +194,16 @@ try {
     [IO.File]::WriteAllBytes($segment,[byte[]]@(0,1,2,3,4,5,6,7,8,9,10,11))
     $badHash=(Get-FileHash -LiteralPath $segment).Hash
     Start-App
-    $prompt=Wait-For 'corruption recovery prompt' {
-        App-Control 'The search index cannot be read. Remove the damaged search index and rebuild from your selected folders?' ([System.Windows.Automation.ControlType]::Text)
-    }
-    $no=Wait-For 'decline corruption recovery' { App-Control 'No' ([System.Windows.Automation.ControlType]::Button) }
-    Invoke-Control $no
+    $message='The search index cannot be read. Remove the damaged search index and rebuild from your selected folders?'
+    $prompt=Wait-For 'corruption recovery prompt' { Find-NativeMessageDialog $message }
+    Capture $prompt 'recovery-corrupt-confirmation-no'
+    Click-NativeMessageButton $prompt 'No'
     if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 1) { throw 'Declining recovery should exit with failure.' }
     if (-not (Test-Path -LiteralPath $segment) -or (Get-FileHash -LiteralPath $segment).Hash -ne $badHash) { throw 'Declining recovery modified the damaged index.' }
     Start-App
-    $yes=Wait-For 'accept corruption recovery' { App-Control 'Yes' ([System.Windows.Automation.ControlType]::Button) }
-    Invoke-Control $yes
+    $prompt=Wait-For 'accept corruption recovery' { Find-NativeMessageDialog $message }
+    Capture $prompt 'recovery-corrupt-confirmation-yes'
+    Click-NativeMessageButton $prompt 'Yes'
     Wait-Main
     Set-Query 'recoverableoriginal'
     $null=Wait-For 'acceptance rebuilds original content' {

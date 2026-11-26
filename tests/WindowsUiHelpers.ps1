@@ -98,7 +98,12 @@ function Select-Combo($Root, [string]$Id, [string]$Label, [int]$KeyboardIndex=-1
     }
 }
 function Read-Settings {
-    Get-Content $settingsPath -Raw | ConvertFrom-Json
+    # Allow the app's atomic replace while the test reads persisted settings.
+    $share = [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+    $stream = [IO.File]::Open($settingsPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, $share)
+    $reader = [IO.StreamReader]::new($stream)
+    try { $reader.ReadToEnd() | ConvertFrom-Json }
+    finally { $reader.Dispose(); $stream.Dispose() }
 }
 function Capture-Window($Element, [string]$Name) {
     Add-Type -AssemblyName System.Drawing

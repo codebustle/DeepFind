@@ -28,6 +28,7 @@ $settingsPath = Join-Path $env:LOCALAPPDATA 'DeepFind\settings.json'
 New-Item -ItemType Directory -Path (Split-Path $settingsPath) -Force | Out-Null
 @{Folders=@(); IndexLocation=$parent; PageSize=250; Theme='System'} | ConvertTo-Json | Set-Content -LiteralPath $settingsPath -Encoding UTF8
 . "$PSScriptRoot\WindowsUiHelpers.ps1"
+. "$PSScriptRoot\WindowsNativeDialogs.ps1"
 Add-Type -AssemblyName System.Windows.Forms
 
 function Assert-Count([int]$Count) {
@@ -46,7 +47,7 @@ function Close-Settings($Window) {
 }
 function Select-Folder($Window,[string]$Path) {
     # Native Windows picker; navigate to a test-only folder via its address bar.
-    $Window.SetFocus()
+    $null=[DeepFindNativeDialogPointer]::SetForegroundWindow([IntPtr]$Window.Current.NativeWindowHandle)
     [System.Windows.Forms.Clipboard]::SetText($Path)
     [System.Windows.Forms.SendKeys]::SendWait('%d')
     [System.Windows.Forms.SendKeys]::SendWait('^v')
@@ -56,7 +57,7 @@ function Select-Folder($Window,[string]$Path) {
         if (-not $b) { $b=By-Name $Window 'Select folder' }
         if ($b -and $b.Current.IsEnabled) { $b }
     }
-    Invoke-Control $button
+    Click-NativeMessageButton $Window $button.Current.Name
 }
 function Find-Result([string]$Name) {
     By-Name (By-Id $script:main ResultsList) $Name
@@ -97,18 +98,23 @@ try {
     Start-Main
     $null=Wait-For 'first run no folders' { (Assert-Count 0) -and (By-Name $main 'Add a folder to start searching your files.') }
     Capture-Window $main 'system-first-run'
-    Invoke-Control (By-Name $main 'Add folder')
+    Write-Host 'First run visible; opening folder settings via actual pointer.'
+    Click-TestControl (By-Name $main 'Add folder')
     $settings=Wait-For 'first run folder settings' { Find-AppElement 'Index settings' }
     Select-Tab (By-Name $settings 'Folders')
-    Invoke-Control (By-Name $settings 'Add folder')
-    $picker=Wait-For 'native folder picker' { Find-AppElement 'Choose folders to index' }
-    Invoke-Control (By-Name $picker 'Cancel')
-    $null=Wait-For 'picker cancelled' { -not (Find-AppElement 'Choose folders to index') }
+    Write-Host 'Opening native folder chooser via actual pointer.'
+    Click-TestControl (By-Name $settings 'Add folder')
+    $picker=Wait-For 'native folder picker' { Find-NativeDialogTitle 'Choose folders to index' }
+    Write-Host 'Native picker found; cancelling.'
+    Click-NativeMessageButton $picker 'Cancel'
+    $null=Wait-For 'picker cancelled' { -not (Find-NativeDialogTitle 'Choose folders to index') }
     if (@((Read-Settings).Folders).Count -ne 0) { throw 'Cancelling folder picker changed committed roots.' }
-    Invoke-Control (By-Name $settings 'Add folder')
-    $picker=Wait-For 'native picker reopened' { Find-AppElement 'Choose folders to index' }
+    Write-Host 'Opening native folder chooser via actual pointer.'
+    Click-TestControl (By-Name $settings 'Add folder')
+    $picker=Wait-For 'native picker reopened' { Find-NativeDialogTitle 'Choose folders to index' }
+    Write-Host 'Native picker reopened; selecting disposable fixture.'
     Select-Folder $picker $fixture
-    $null=Wait-For 'folder staged' { (By-Name $settings $fixture) -and -not (Find-AppElement 'Choose folders to index') }
+    $null=Wait-For 'folder staged' { (By-Name $settings $fixture) -and -not (Find-NativeDialogTitle 'Choose folders to index') }
     if (@((Read-Settings).Folders).Count -ne 0) { throw 'Staged folder was committed before Apply.' }
     Invoke-Control (By-Name $settings 'Apply changes')
     $null=Wait-For 'folder applied' { @((Read-Settings).Folders) -contains $fixture }

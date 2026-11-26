@@ -314,6 +314,23 @@ public sealed class Workflows : IDisposable
     }
 
     [Fact]
+    public async Task SettingsReplaceRetriesATemporarilyLockedDestination()
+    {
+        var store = new SettingsStore(Data);
+        store.Save(new Settings { Paused = false });
+        var path = Path.Combine(Data, "settings.json");
+        using var reader = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var release = Task.Run(async () =>
+        {
+            await Task.Delay(100);
+            reader.Dispose();
+        });
+        store.Save(new Settings { Paused = true });
+        await release;
+        Assert.True(store.Load().Paused);
+    }
+
+    [Fact]
     public void PresentationPreferencesSurviveReloadAndOldSettingsHaveDefaults()
     {
         var store = new SettingsStore(Data);

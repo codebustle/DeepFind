@@ -40,6 +40,7 @@ public partial class App : Application
             try { model = new(store, settings, directory); }
             catch (Exception error) when (error is CorruptIndexException or IndexFormatTooOldException or IndexFormatTooNewException or SearchIndexTruncatedException)
             {
+                Log.Warning("Local search index requires explicit recovery ({ErrorType})", error.GetType().Name);
                 var answer = MessageBox.Show("The search index cannot be read. Remove the damaged search index and rebuild from your selected folders?",
                     "DeepFind", MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (answer != MessageBoxResult.Yes)
