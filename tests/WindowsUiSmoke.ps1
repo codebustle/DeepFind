@@ -4,6 +4,14 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
     throw 'This test requires a disposable GitHub Actions Windows runner.'
 }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class DeepFindTestPointer {
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+}
+'@
 $ae = [System.Windows.Automation.AutomationElement]
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 $fixture = Join-Path $env:RUNNER_TEMP ('deepfind-ui-' + [Guid]::NewGuid().ToString('N'))
@@ -64,6 +72,17 @@ function Find-AppControl([string]$Name, $ControlType) {
 function Find-AppElement([string]$Name) {
     Find-AppControl $Name ([System.Windows.Automation.ControlType]::Window)
 }
+function Click-TestControl($Element) {
+    if ($Element.Current.ProcessId -ne $script:process.Id -or $Element.Current.IsOffscreen) {
+        throw 'Refusing to click outside the visible disposable DeepFind window.'
+    }
+    $rect = $Element.Current.BoundingRectangle
+    if ($rect.Width -le 0 -or $rect.Height -le 0) { throw 'Control has empty click bounds.' }
+    $x = [int]($rect.X + $rect.Width / 2); $y = [int]($rect.Y + $rect.Height / 2)
+    if (-not [DeepFindTestPointer]::SetCursorPos($x, $y)) { throw 'Could not move test pointer.' }
+    [DeepFindTestPointer]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+    [DeepFindTestPointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+}
 function Select-Combo($Root, [string]$Id, [string]$Label) {
     $combo = By-Id $Root $Id
     Write-Host "Selecting $Id option '$Label'."
@@ -72,8 +91,17 @@ function Select-Combo($Root, [string]$Id, [string]$Label) {
     $item = Wait-For "combo option $Label" {
         Find-AppControl $Label ([System.Windows.Automation.ControlType]::ListItem)
     }
-    Select-Tab $item
-    if ($expand.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Expanded) { $expand.Collapse() }
+    $selection = $null
+    if ($item.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$selection)) {
+        $selection.Select()
+    } else {
+        # WPF popup's rendered container may expose only synchronized input.
+        # Exercise the actual visible item with the runner's pointer in that case.
+        Click-TestControl $item
+    }
+    $null = Wait-For "combo $Id closed after selection" {
+        $expand.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Collapsed
+    }
 }
 function Read-Settings {
     Get-Content $settingsPath -Raw | ConvertFrom-Json
@@ -95,7 +123,11 @@ function Toggle-ResultOption([string]$Name) {
     $pattern = $null
     if ($item.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$pattern)) {
         $pattern.Toggle()
-    } else { Invoke-Control $item }
+    } else {
+        $invoke = $null
+        if ($item.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) { $invoke.Invoke() }
+        else { Click-TestControl $item }
+    }
 }
 $process = Start-Process $Application -PassThru
 try {

@@ -20,7 +20,9 @@ jobs:
       - run: dotnet test DeepFind.slnx -c Release --no-build
       - run: dotnet list DeepFind.slnx package --vulnerable --include-transitive
       - run: dotnet publish src/DeepFind.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
-      - run: dotnet build installer/DeepFind.Installer.wixproj -c Release
+      - name: Build candidate MSI
+        id: candidate_installer
+        run: dotnet build installer/DeepFind.Installer.wixproj -c Release
       - name: Install, launch, and uninstall DeepFind
         shell: pwsh
         run: |
@@ -70,6 +72,20 @@ jobs:
           }
           if (Test-Path $application) { throw "DeepFind executable remained after uninstall." }
           if (Test-Path $shortcutPath) { throw "DeepFind Start Menu shortcut remained after uninstall." }
+      - name: Test silent opt-in and interactive Finish checkbox
+        if: ${{ !cancelled() && steps.candidate_installer.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($msi.Count -ne 1) { throw "Expected one candidate MSI." }
+          function Invoke-Installer($operation, $log, $properties = "") {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`" $properties"
+            $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
+          }
+          $desktopPath = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'DeepFind.lnk'
+          $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
+          $shell = New-Object -ComObject WScript.Shell
           Invoke-Installer /i deepfind-desktop-install.log "DESKTOPSHORTCUT=1"
           try {
             if (-not (Test-Path $desktopPath)) { throw "Silent Desktop opt-in did not create a shortcut." }
@@ -82,16 +98,21 @@ jobs:
           & powershell.exe -NoProfile -File tests/WindowsInstallerUi.ps1 -Msi $msi[0].FullName
           if ($LASTEXITCODE -ne 0) { throw "Interactive installer UI test failed." }
       - name: Check out immutable V2 baseline
+        id: baseline_checkout
+        if: ${{ !cancelled() && steps.candidate_installer.outcome == 'success' }}
         uses: actions/checkout@v4
         with:
           ref: 14f027a5c42bf2cb8b03b54e49410e08384d0de7
           path: baseline-v2
       - name: Build V2 installer for upgrade scenario
+        id: baseline_installer
+        if: ${{ !cancelled() && steps.baseline_checkout.outcome == 'success' }}
         working-directory: baseline-v2
         run: |
           dotnet publish src/DeepFind.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
           dotnet build installer/DeepFind.Installer.wixproj -c Release
       - name: Upgrade from V2, repair and verify data preservation
+        if: ${{ !cancelled() && steps.baseline_installer.outcome == 'success' && steps.candidate_installer.outcome == 'success' }}
         shell: pwsh
         run: |
           $old = @(Get-ChildItem baseline-v2/installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
