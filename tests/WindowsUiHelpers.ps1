@@ -8,10 +8,14 @@
     throw "Timed out: $Description"
 }
 function By-Id($Root, [string]$Id) {
-    $Root.FindFirst($scope, ([System.Windows.Automation.PropertyCondition]::new($ae::AutomationIdProperty, $Id)))
+    if (-not $Root) { return }
+    try { $Root.FindFirst($scope, ([System.Windows.Automation.PropertyCondition]::new($ae::AutomationIdProperty, $Id))) }
+    catch [System.Windows.Automation.ElementNotAvailableException] { }
 }
 function By-Name($Root, [string]$Name) {
-    $Root.FindFirst($scope, ([System.Windows.Automation.PropertyCondition]::new($ae::NameProperty, $Name)))
+    if (-not $Root) { return }
+    try { $Root.FindFirst($scope, ([System.Windows.Automation.PropertyCondition]::new($ae::NameProperty, $Name))) }
+    catch [System.Windows.Automation.ElementNotAvailableException] { }
 }
 function Require-Pattern($Element, $Pattern) {
     if (-not $Element) { throw "Missing control for pattern $($Pattern.ProgrammaticName)." }
