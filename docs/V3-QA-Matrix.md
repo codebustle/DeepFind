@@ -24,4 +24,4 @@ This branch is an implementation candidate, not a release. Use disposable source
 | Corruption, permissions, storage and recovery | AC-19 | Windows controlled failure cases |
 | Build, tests, artifact and all above cases | AC-20 | Exact SHA CI, complete recorded scenario results |
 
-Desktop checkbox on final installer page remains open. Do not mark DF-02 resolved until actual installation is verified. No release approval until the complete matrix passes.
+Desktop checkbox and silent opt-in are now candidate implementations; test the actual interactive checked and unchecked Finish paths before release. Do not mark DF-02 resolved until actual installation is verified. No release approval until the complete matrix passes.

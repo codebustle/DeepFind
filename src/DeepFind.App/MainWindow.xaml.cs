@@ -220,7 +220,7 @@ public partial class MainWindow : Window
         header.SetResourceReference(Border.BorderBrushProperty, "Line");
         DockPanel.SetDock(header, Dock.Top);
         content.Children.Add(header);
-        var preview = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var preview = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 16, 0) };
         string text;
         try { text = model.ReadPreview(row.Hit); }
         catch (Exception error) when (error is System.IO.IOException or System.Text.Json.JsonException)

@@ -13,6 +13,11 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 1 && DesktopShortcut.IsInstallerCommand(e.Args[0]))
+        {
+            Shutdown(DesktopShortcut.Run(e.Args[0]));
+            return;
+        }
         instance = new Mutex(true, @"Local\DeepFind.Desktop", out var firstInstance);
         if (!firstInstance)
         {

@@ -26,7 +26,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TabControl x:Name="Tabs" Style="{StaticResource SoftTabs}">
+        <TabControl x:Name="Tabs" AutomationProperties.AutomationId="SettingsTabs" Style="{StaticResource SoftTabs}">
             <TabItem Header="Folders" Style="{StaticResource SoftTab}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
@@ -168,7 +168,7 @@
                             <TextBlock Text="Exclude paths or names (one pattern per line, * and ? supported)" TextWrapping="Wrap" />
                         </Label>
                         <TextBox x:Name="Exclusions" Style="{StaticResource SoftTextBox}" AcceptsReturn="True" MinHeight="51"
-                                 MaxHeight="80" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" />
+                                 MaxHeight="80" Padding="9,4,25,4" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" />
                         <Grid Margin="0,12,0,0" x:Name="IntervalsGrid" SizeChanged="OnIntervalsSizeChanged">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>

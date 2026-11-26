@@ -139,8 +139,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         RefreshWatchers();
         timer.Start();
         QueueSearch(delay: false);
-        if (HasFolders)
-            await RunIndexAsync(pruneOnly: Settings.Paused);
+        // A no-folder launch only prunes stale records from an interrupted settings change.
+        await RunIndexAsync(pruneOnly: Settings.Paused || !HasFolders);
     }
 
     public void QueueSearch(bool delay, int? requestedPage = null)
@@ -171,7 +171,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var token = owner.Token;
             if (delay)
                 await Task.Delay(200, token);
-            var found = await Task.Run(() => index.Search(request, token), token);
+            var found = HasFolders
+                ? await Task.Run(() => index.Search(request, token), token)
+                : new SearchResults(0, []);
             token.ThrowIfCancellationRequested();
             Results = found.Hits.Select(hit => new ResultRow(hit,
                 states.TryGetValue(hit.File.Id, out var state) && state.Unavailable)).ToArray();

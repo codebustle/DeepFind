@@ -108,36 +108,36 @@
                           SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Sort}"
                           AutomationProperties.Name="Sort results" />
                 <Button Content="View ▾" Click="OnView" Style="{StaticResource SoftButton}" Margin="4,0,0,4"
-                        AutomationProperties.Name="Result view options">
+                        AutomationProperties.Name="Result view options" AutomationProperties.AutomationId="ViewOptions">
                     <Button.ContextMenu>
-                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                            <MenuItem Header="File path" IsCheckable="True" IsChecked="{Binding ShowPath, Mode=TwoWay}" StaysOpenOnClick="True" />
-                            <MenuItem Header="Match location" IsCheckable="True" IsChecked="{Binding ShowLocation, Mode=TwoWay}" StaysOpenOnClick="True" />
-                            <MenuItem Header="Content excerpt" IsCheckable="True" IsChecked="{Binding ShowExcerpt, Mode=TwoWay}" StaysOpenOnClick="True" />
-                            <MenuItem Header="Modified date" IsCheckable="True" IsChecked="{Binding ShowModified, Mode=TwoWay}" StaysOpenOnClick="True" />
+                        <ContextMenu Style="{StaticResource SoftContextMenu}" DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="File path" IsCheckable="True" IsChecked="{Binding ShowPath, Mode=TwoWay}" StaysOpenOnClick="True" />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Match location" IsCheckable="True" IsChecked="{Binding ShowLocation, Mode=TwoWay}" StaysOpenOnClick="True" />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Content excerpt" IsCheckable="True" IsChecked="{Binding ShowExcerpt, Mode=TwoWay}" StaysOpenOnClick="True" />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Modified date" IsCheckable="True" IsChecked="{Binding ShowModified, Mode=TwoWay}" StaysOpenOnClick="True" />
                             <Separator />
-                            <MenuItem Header="Restore defaults" Click="OnRestoreView" />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Restore defaults" Click="OnRestoreView" />
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
             </WrapPanel>
         </Border>
         <WrapPanel Grid.Row="2" Margin="0,5,0,7">
-            <TextBlock Text="{Binding ResultCount}" Margin="0,0,12,4" VerticalAlignment="Center"
+            <TextBlock Text="{Binding ResultCount}" AutomationProperties.AutomationId="ResultCount" Margin="0,0,12,4" VerticalAlignment="Center"
                        FontSize="12" Foreground="{DynamicResource Secondary}" AutomationProperties.LiveSetting="Polite" />
             <Button Content="|‹" Click="OnFirstPage" IsEnabled="{Binding CanPrevious}" Style="{StaticResource SoftButton}"
-                    Margin="0,0,4,4" AutomationProperties.Name="First page" />
+                    Margin="0,0,4,4" AutomationProperties.Name="First page" AutomationProperties.AutomationId="FirstPage" />
             <Button Content="‹" Click="OnPreviousPage" IsEnabled="{Binding CanPrevious}" Style="{StaticResource SoftButton}"
-                    Margin="0,0,4,4" AutomationProperties.Name="Previous page" />
-            <TextBlock Text="{Binding PageLabel}" VerticalAlignment="Center" Margin="2,0,6,4" AutomationProperties.LiveSetting="Polite" />
+                    Margin="0,0,4,4" AutomationProperties.Name="Previous page" AutomationProperties.AutomationId="PreviousPage" />
+            <TextBlock Text="{Binding PageLabel}" AutomationProperties.AutomationId="PageLabel" VerticalAlignment="Center" Margin="2,0,6,4" AutomationProperties.LiveSetting="Polite" />
             <Button Content="›" Click="OnNextPage" IsEnabled="{Binding CanNext}" Style="{StaticResource SoftButton}"
-                    Margin="0,0,4,4" AutomationProperties.Name="Next page" />
+                    Margin="0,0,4,4" AutomationProperties.Name="Next page" AutomationProperties.AutomationId="NextPage" />
             <Button Content="›|" Click="OnLastPage" IsEnabled="{Binding CanNext}" Style="{StaticResource SoftButton}"
-                    Margin="0,0,10,4" AutomationProperties.Name="Last page" />
+                    Margin="0,0,10,4" AutomationProperties.Name="Last page" AutomationProperties.AutomationId="LastPage" />
             <TextBlock Text="Per page" VerticalAlignment="Center" Margin="0,0,6,4" FontSize="12" />
             <ComboBox ItemsSource="{Binding PageSizes, RelativeSource={RelativeSource AncestorType=Window}}"
                       SelectedItem="{Binding PageSize}" Style="{StaticResource SoftComboBox}" MinWidth="76"
-                      Margin="0,0,0,4" AutomationProperties.Name="Results per page" />
+                      Margin="0,0,0,4" AutomationProperties.Name="Results per page" AutomationProperties.AutomationId="PageSize" />
         </WrapPanel>
         <Grid Grid.Row="3">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
