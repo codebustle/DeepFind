@@ -4,6 +4,20 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
     throw 'This test requires a disposable GitHub Actions Windows runner.'
 }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class DeepFindInstallerPointer {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; public POINT(int x, int y) { X = x; Y = y; } }
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+}
+'@
 $ae = [System.Windows.Automation.AutomationElement]
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 $root = $ae::RootElement
@@ -12,16 +26,10 @@ $exePath = Join-Path $env:LOCALAPPDATA 'Programs\DeepFind\DeepFind.App.exe'
 function Find-Dialog {
     $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($window in $windows) {
-        # Match the observed native MSI dialog class and product title first.
-        if ($window.Current.ClassName -eq 'MsiDialogCloseClass' -and $window.Current.Name -like '*DeepFind*') { return $window }
-        $pidValue = $window.Current.ProcessId
-        if (-not $pidValue) { continue }
-        $p = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-        if ($p -and $p.ProcessName -eq 'msiexec' -and -not $window.Current.IsOffscreen -and
-            $window.Current.Name -match 'DeepFind|Windows Installer|Setup') { return $window }
-    }
-    foreach ($p in @(Get-Process msiexec -ErrorAction SilentlyContinue)) {
-        if ($p.MainWindowHandle -ne 0) { return $ae::FromHandle($p.MainWindowHandle) }
+        if ($window.Current.ClassName -eq 'MsiDialogCloseClass' -and
+            $window.Current.Name -eq 'DeepFind Setup' -and -not $window.Current.IsOffscreen) {
+            return $window
+        }
     }
 }
 function Capture-Installer([string]$Tag) {
@@ -34,26 +42,59 @@ function Capture-Installer([string]$Tag) {
         $bitmap.Save((Join-Path $env:RUNNER_TEMP "deepfind-ui-installer-$Tag.png"),[System.Drawing.Imaging.ImageFormat]::Png)
     } finally { $graphics.Dispose();$bitmap.Dispose() }
 }
-function Find-Control($Dialog, [string]$Name, $Type) {
-    $conditions = [System.Windows.Automation.Condition[]]@(
-        [System.Windows.Automation.PropertyCondition]::new($ae::NameProperty, $Name),
-        [System.Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty, $Type)
-    )
-    $exact = $Dialog.FindFirst($scope, [System.Windows.Automation.AndCondition]::new($conditions))
-    if ($exact) { return $exact }
-    $typeCondition = [System.Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty,$Type)
+function Find-Control($Dialog, [string]$Name) {
+    # MSI's Win32 provider may expose a named button or checkbox with a different
+    # UIA ControlType than WPF. Use the real accessible label, scoped to the
+    # observed installer dialog; never match arbitrary desktop controls.
     $expected = ($Name -replace '[&<>]','').Trim()
-    foreach ($control in $Dialog.FindAll($scope,$typeCondition)) {
-        if (($control.Current.Name -replace '[&<>]','').Trim() -eq $expected) { return $control }
+    $matches = @($Dialog.FindAll($scope, [System.Windows.Automation.Condition]::TrueCondition) |
+        Where-Object { ($_.Current.Name -replace '[&<>]','').Trim() -eq $expected -and -not $_.Current.IsOffscreen })
+    if ($matches.Count -gt 1) { throw "Ambiguous installer control '$Name'." }
+    if ($matches.Count -eq 1) { return $matches[0] }
+}
+function Test-ControlEnabled($Control) {
+    if (-not $Control) { return $false }
+    $handle = [IntPtr]$Control.Current.NativeWindowHandle
+    if ($handle -ne [IntPtr]::Zero) {
+        return [DeepFindInstallerPointer]::IsWindowEnabled($handle)
     }
+    return $Control.Current.IsEnabled
 }
-function Invoke-DialogButton($Control) {
-    $Control.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+function Click-InstallerControl($Dialog, $Control) {
+    if (-not (Test-ControlEnabled $Control)) { throw 'Installer control is not enabled.' }
+    if ($Control.Current.ProcessId -ne $Dialog.Current.ProcessId -or $Control.Current.IsOffscreen) {
+        throw 'Refusing to interact outside the visible DeepFind installer.'
+    }
+    $handle = [IntPtr]$Dialog.Current.NativeWindowHandle
+    if ($handle -eq [IntPtr]::Zero) { throw 'Installer dialog has no native window handle.' }
+    $null = [DeepFindInstallerPointer]::SetForegroundWindow($handle)
+    $bounds = $Control.Current.BoundingRectangle
+    if ($bounds.Width -le 0 -or $bounds.Height -le 0) { throw 'Installer control has empty click bounds.' }
+    $x = [int]($bounds.X + $bounds.Width / 2)
+    $y = [int]($bounds.Y + $bounds.Height / 2)
+    $point = [DeepFindInstallerPointer+POINT]::new($x, $y)
+    $hit = [DeepFindInstallerPointer]::WindowFromPoint($point)
+    if ($hit -eq [IntPtr]::Zero -or [DeepFindInstallerPointer]::GetAncestor($hit, 2) -ne $handle) {
+        throw "Installer control '$($Control.Current.Name)' is not hittable in its dialog."
+    }
+    Write-Host "Click installer control '$($Control.Current.Name)' at ($x,$y); type=$($Control.Current.ControlType.ProgrammaticName)."
+    if (-not [DeepFindInstallerPointer]::SetCursorPos($x,$y)) { throw 'Could not move test pointer.' }
+    [DeepFindInstallerPointer]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+    [DeepFindInstallerPointer]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
 }
-function Set-Checked($Control, [bool]$Checked) {
-    $toggle = $Control.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
-    $state = $toggle.Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On
-    if ($state -ne $Checked) { $toggle.Toggle() }
+function Set-Checked($Dialog, $Control, [bool]$Checked) {
+    $toggle = $null
+    if (-not $Control.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$toggle)) {
+        throw "Installer checkbox '$($Control.Current.Name)' has no observable TogglePattern."
+    }
+    $desired = if ($Checked) { [System.Windows.Automation.ToggleState]::On } else { [System.Windows.Automation.ToggleState]::Off }
+    if ($toggle.Current.ToggleState -ne $desired) { Click-InstallerControl $Dialog $Control }
+    $deadline = (Get-Date).AddSeconds(3)
+    do {
+        if ($toggle.Current.ToggleState -eq $desired) { return }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    throw "Installer checkbox '$($Control.Current.Name)' failed to reach checked=$Checked."
 }
 foreach ($checked in @($true, $false)) {
     if (Test-Path $desktopPath) { throw 'Expected no preexisting desktop shortcut.' }
@@ -69,15 +110,13 @@ foreach ($checked in @($true, $false)) {
             if ($install.HasExited) { throw "Setup ended before Finish at exit code $($install.ExitCode)." }
             $dialog = Find-Dialog
             if (-not $dialog) { Start-Sleep -Milliseconds 300; continue }
-            $buttonType = [System.Windows.Automation.ControlType]::Button
-            $checkType = [System.Windows.Automation.ControlType]::CheckBox
-            $finish = Find-Control $dialog 'Finish' $buttonType
-            if ($finish -and $finish.Current.IsEnabled) {
-                $checkbox = Find-Control $dialog 'Create a desktop shortcut' $checkType
+            $finish = Find-Control $dialog 'Finish'
+            if (Test-ControlEnabled $finish) {
+                $checkbox = Find-Control $dialog 'Create a desktop shortcut'
                 if (-not $checkbox) { throw 'Finish screen missing Desktop shortcut checkbox.' }
-                Set-Checked $checkbox $checked
+                Set-Checked $dialog $checkbox $checked
                 Capture-Installer "finish-$checked"
-                Invoke-DialogButton $finish
+                Click-InstallerControl $dialog $finish
                 $finished = $true
                 break
             }
@@ -88,16 +127,16 @@ foreach ($checked in @($true, $false)) {
             $seenState = $state
             Write-Host "Installer dialog: $($dialog.Current.Name); controls: $state"
             foreach ($control in $controls) {
-                if ($control.Current.ControlType -eq $checkType -and $control.Current.Name -match 'accept.*(terms|license)') {
-                    Set-Checked $control $true
+                if ($control.Current.Name -match '^I accept.*(terms|license)' -and -not $control.Current.IsOffscreen) {
+                    Set-Checked $dialog $control $true
                 }
             }
-            $installButton = Find-Control $dialog 'Install' $buttonType
-            $nextButton = Find-Control $dialog 'Next' $buttonType
-            if (-not $nextButton) { $nextButton = Find-Control $dialog 'Next >' $buttonType }
-            if ($installButton -and $installButton.Current.IsEnabled) { Invoke-DialogButton $installButton }
-            elseif ($nextButton -and $nextButton.Current.IsEnabled) { Invoke-DialogButton $nextButton }
-            else { $seenState = '' }
+            $installButton = Find-Control $dialog 'Install'
+            $nextButton = Find-Control $dialog 'Next'
+            if (-not $nextButton) { $nextButton = Find-Control $dialog 'Next >' }
+            if (Test-ControlEnabled $installButton) { Click-InstallerControl $dialog $installButton }
+            elseif (Test-ControlEnabled $nextButton) { Click-InstallerControl $dialog $nextButton }
+            else { Write-Host 'No enabled Next or Install control; waiting for dialog state change.'; $seenState = '' }
             Start-Sleep -Milliseconds 300
         }
         if (-not $finished) { throw "Setup never reached Finish. Last state: $seenState" }
@@ -121,8 +160,8 @@ foreach ($checked in @($true, $false)) {
         if (-not $install.HasExited) {
             $dialog = Find-Dialog
             if ($dialog) {
-                $cancel = Find-Control $dialog 'Cancel' ([System.Windows.Automation.ControlType]::Button)
-                if ($cancel -and $cancel.Current.IsEnabled) { Invoke-DialogButton $cancel }
+                $cancel = Find-Control $dialog 'Cancel'
+                if (Test-ControlEnabled $cancel) { Click-InstallerControl $dialog $cancel }
             }
             if (-not $install.WaitForExit(15000)) { Stop-Process -Id $install.Id -Force }
         }
