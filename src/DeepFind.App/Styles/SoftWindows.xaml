@@ -134,6 +134,7 @@
     </Style>
 
     <Style x:Key="SoftComboItem" TargetType="ComboBoxItem">
+        <Setter Property="AutomationProperties.Name" Value="{Binding}" />
         <Setter Property="Foreground" Value="{DynamicResource Ink}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="MinHeight" Value="28" />

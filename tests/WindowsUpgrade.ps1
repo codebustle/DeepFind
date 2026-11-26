@@ -62,8 +62,16 @@ try {
     Invoke-Msi /i $CandidateMsi 'v3-upgrade'
     if ((Get-FileHash $settingsFile).Hash -ne $hash) { throw 'Upgrade changed the existing settings.' }
     if (-not (Test-Path (Join-Path $index 'tracking.db'))) { throw 'Upgrade removed the existing custom index.' }
-    $installed = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -eq 'DeepFind')
-    if ($installed.Count -ne 1 -or $installed[0].DisplayVersion -ne '1.1.0') { throw 'Upgrade did not leave exactly one V3 MSI registration.' }
+    $engine = New-Object -ComObject WindowsInstaller.Installer
+    $installed = @()
+    foreach ($code in $engine.Products) {
+        try {
+            $name = $engine.ProductInfo($code, 'ProductName')
+            if ($name -eq 'DeepFind') { $installed += [pscustomobject]@{Code=$code; Version=$engine.ProductInfo($code, 'VersionString')} }
+        } catch { continue }
+    }
+    Write-Host "Windows Installer product registrations: $($installed | ConvertTo-Json -Compress)"
+    if ($installed.Count -ne 1 -or [version]$installed[0].Version -ne [version]'1.1.0') { throw 'Upgrade did not leave exactly one V3 MSI registration.' }
     Assert-StartLink
     Inspect-App 'Page 1 / 1'
     Invoke-Msi /fa $CandidateMsi 'repair'

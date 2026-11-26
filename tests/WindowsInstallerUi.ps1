@@ -12,17 +12,38 @@ $exePath = Join-Path $env:LOCALAPPDATA 'Programs\DeepFind\DeepFind.App.exe'
 function Find-Dialog {
     $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($window in $windows) {
-        if ($window.Current.Name -notmatch 'DeepFind') { continue }
         $p = Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
-        if ($p -and $p.ProcessName -eq 'msiexec') { return $window }
+        if ($p -and $p.ProcessName -eq 'msiexec' -and -not $window.Current.IsOffscreen) {
+            if ($window.Current.Name -match 'DeepFind|Windows Installer|Setup') { return $window }
+            if ($window.Current.ClassName -match 'MsiDialog|#32770') { return $window }
+        }
     }
+    foreach ($p in @(Get-Process msiexec -ErrorAction SilentlyContinue)) {
+        if ($p.MainWindowHandle -ne 0) { return $ae::FromHandle($p.MainWindowHandle) }
+    }
+}
+function Capture-Installer([string]$Tag) {
+    Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+    $rect = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $bitmap = [System.Drawing.Bitmap]::new($rect.Width,$rect.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen($rect.X,$rect.Y,0,0,$bitmap.Size)
+        $bitmap.Save((Join-Path $env:RUNNER_TEMP "deepfind-ui-installer-$Tag.png"),[System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $graphics.Dispose();$bitmap.Dispose() }
 }
 function Find-Control($Dialog, [string]$Name, $Type) {
     $conditions = [System.Windows.Automation.Condition[]]@(
         [System.Windows.Automation.PropertyCondition]::new($ae::NameProperty, $Name),
         [System.Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty, $Type)
     )
-    $Dialog.FindFirst($scope, [System.Windows.Automation.AndCondition]::new($conditions))
+    $exact = $Dialog.FindFirst($scope, [System.Windows.Automation.AndCondition]::new($conditions))
+    if ($exact) { return $exact }
+    $typeCondition = [System.Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty,$Type)
+    $expected = ($Name -replace '[&<>]','').Trim()
+    foreach ($control in $Dialog.FindAll($scope,$typeCondition)) {
+        if (($control.Current.Name -replace '[&<>]','').Trim() -eq $expected) { return $control }
+    }
 }
 function Invoke-DialogButton($Control) {
     $Control.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
@@ -53,6 +74,7 @@ foreach ($checked in @($true, $false)) {
                 $checkbox = Find-Control $dialog 'Create a desktop shortcut' $checkType
                 if (-not $checkbox) { throw 'Finish screen missing Desktop shortcut checkbox.' }
                 Set-Checked $checkbox $checked
+                Capture-Installer "finish-$checked"
                 Invoke-DialogButton $finish
                 $finished = $true
                 break
@@ -62,6 +84,7 @@ foreach ($checked in @($true, $false)) {
             $state = ($controls | ForEach-Object { $_.Current.Name }) -join '|'
             if ($state -eq $seenState) { Start-Sleep -Milliseconds 300; continue }
             $seenState = $state
+            Write-Host "Installer dialog: $($dialog.Current.Name); controls: $state"
             foreach ($control in $controls) {
                 if ($control.Current.ControlType -eq $checkType -and $control.Current.Name -match 'accept.*(terms|license)') {
                     Set-Checked $control $true
@@ -85,6 +108,13 @@ foreach ($checked in @($true, $false)) {
             if ($shell.CreateShortcut($desktopPath).TargetPath -ne $exePath) { throw 'Interactive Desktop link has wrong target.' }
         }
         Write-Host "Interactive setup Finish checkbox checked=$checked passed."
+    } catch {
+        Write-Host "Installer UI failure: $($_.ScriptStackTrace)"
+        try { Capture-Installer "failure-$checked" } catch { Write-Host "Screenshot failed: $_" }
+        foreach ($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)) {
+            Write-Host "Window: '$($window.Current.Name)' class=$($window.Current.ClassName) pid=$($window.Current.ProcessId)"
+        }
+        throw
     } finally {
         if (-not $install.HasExited) {
             $dialog = Find-Dialog

@@ -26,7 +26,10 @@ public partial class MainWindow : Window
         SystemEvents.UserPreferenceChanged += OnPreferencesChanged;
     }
 
-    public sealed record SortChoice(SortOrder Value, string Label);
+    public sealed record SortChoice(SortOrder Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
     public SortChoice[] SortOptions { get; } =
     [
         new(SortOrder.Relevance, "Relevance"), new(SortOrder.Modified, "Modified — newest"),

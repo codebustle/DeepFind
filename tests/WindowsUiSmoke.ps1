@@ -89,7 +89,12 @@ function Select-Combo($Root, [string]$Id, [string]$Label) {
     $expand = Require-Pattern $combo ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
     $expand.Expand()
     $item = Wait-For "combo option $Label" {
-        Find-AppControl $Label ([System.Windows.Automation.ControlType]::ListItem)
+        $exact = Find-AppControl $Label ([System.Windows.Automation.ControlType]::ListItem)
+        if ($exact) { return $exact }
+        # A content-host peer may expose the visible label instead of the
+        # ListItem label. Restrict fallback to the tested app and visible text.
+        $visible = Find-AppControl $Label ([System.Windows.Automation.ControlType]::Text)
+        if ($visible -and -not $visible.Current.IsOffscreen) { $visible }
     }
     $selection = $null
     if ($item.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$selection)) {
