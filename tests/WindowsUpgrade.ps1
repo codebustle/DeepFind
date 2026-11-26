@@ -7,6 +7,19 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
     throw 'This test requires a disposable GitHub Actions Windows runner.'
 }
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class DeepFindMsiTest {
+    [DllImport("msi.dll", CharSet=CharSet.Unicode)]
+    public static extern uint MsiEnumRelatedProducts(string upgradeCode, uint reserved, uint index, StringBuilder productCode);
+    [DllImport("msi.dll", CharSet=CharSet.Unicode)]
+    public static extern int MsiQueryProductState(string productCode);
+    [DllImport("msi.dll", CharSet=CharSet.Unicode)]
+    public static extern uint MsiGetProductInfo(string productCode, string property, StringBuilder value, ref uint length);
+}
+'@
 $ae = [System.Windows.Automation.AutomationElement]
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 $data = Join-Path $env:LOCALAPPDATA 'DeepFind'
@@ -62,13 +75,18 @@ try {
     Invoke-Msi /i $CandidateMsi 'v3-upgrade'
     if ((Get-FileHash $settingsFile).Hash -ne $hash) { throw 'Upgrade changed the existing settings.' }
     if (-not (Test-Path (Join-Path $index 'tracking.db'))) { throw 'Upgrade removed the existing custom index.' }
-    $engine = New-Object -ComObject WindowsInstaller.Installer
     $installed = @()
-    foreach ($code in $engine.Products) {
-        try {
-            $name = $engine.ProductInfo($code, 'ProductName')
-            if ($name -eq 'DeepFind') { $installed += [pscustomobject]@{Code=$code; Version=$engine.ProductInfo($code, 'VersionString')} }
-        } catch { continue }
+    for ([uint32]$i=0; ; $i++) {
+        $code = [System.Text.StringBuilder]::new(39)
+        $result = [DeepFindMsiTest]::MsiEnumRelatedProducts('{ED6F0B68-C8E4-4F0A-A37B-C506335BA17A}',0,$i,$code)
+        if ($result -eq 259) { break }
+        if ($result -ne 0) { throw "MsiEnumRelatedProducts failed: $result" }
+        $version = [System.Text.StringBuilder]::new(256); [uint32]$len = 256
+        $result = [DeepFindMsiTest]::MsiGetProductInfo($code.ToString(),'VersionString',$version,[ref]$len)
+        if ($result -ne 0) { throw "MsiGetProductInfo failed: $result" }
+        if ([DeepFindMsiTest]::MsiQueryProductState($code.ToString()) -eq 5) {
+            $installed += [pscustomobject]@{Code=$code.ToString();Version=$version.ToString()}
+        }
     }
     Write-Host "Windows Installer product registrations: $($installed | ConvertTo-Json -Compress)"
     if ($installed.Count -ne 1 -or [version]$installed[0].Version -ne [version]'1.1.0') { throw 'Upgrade did not leave exactly one V3 MSI registration.' }

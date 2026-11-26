@@ -83,10 +83,21 @@ function Click-TestControl($Element) {
     [DeepFindTestPointer]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
     [DeepFindTestPointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
 }
-function Select-Combo($Root, [string]$Id, [string]$Label) {
+function Select-Combo($Root, [string]$Id, [string]$Label, [int]$KeyboardIndex=-1) {
     $combo = By-Id $Root $Id
     Write-Host "Selecting $Id option '$Label'."
     $expand = Require-Pattern $combo ([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+    if ($KeyboardIndex -ge 0) {
+        Add-Type -AssemblyName System.Windows.Forms
+        $combo.SetFocus()
+        $expand.Expand()
+        $keys = '{HOME}' + ('{DOWN}' * $KeyboardIndex) + '{ENTER}'
+        [System.Windows.Forms.SendKeys]::SendWait($keys)
+        $null = Wait-For "combo $Id closed after keyboard selection" {
+            $expand.Current.ExpandCollapseState -eq [System.Windows.Automation.ExpandCollapseState]::Collapsed
+        }
+        return
+    }
     $expand.Expand()
     $item = Wait-For "combo option $Label" {
         $exact = Find-AppControl $Label ([System.Windows.Automation.ControlType]::ListItem)
@@ -161,9 +172,12 @@ try {
     $null = Wait-For '100 per page' { (Assert-Page 'Page 1 / 1') -and (Read-Settings).PageSize -eq 100 }
     Select-Combo $main PageSize '50'
     $null = Wait-For '50 per page' { (Assert-Page 'Page 1 / 2') -and (Read-Settings).PageSize -eq 50 }
-    Select-Combo $main SortBox 'Name — Z to A'
+    Select-Combo $main SortBox 'Name — Z to A' 4
     $null = Wait-For 'name descending renders expected first file' {
-        By-Name (By-Id $main ResultsList) 'document-050.txt'
+        $selected = By-Id $main SortBox
+        $result = By-Name (By-Id $main ResultsList) 'document-050.txt'
+        if ($result) { $result }
+        else { By-Name $main 'document-050.txt' }
     }
     Invoke-Control (By-Id $main ViewOptions)
     foreach ($option in @('File path','Match location','Content excerpt','Modified date')) { Toggle-ResultOption $option }

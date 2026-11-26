@@ -12,11 +12,13 @@ $exePath = Join-Path $env:LOCALAPPDATA 'Programs\DeepFind\DeepFind.App.exe'
 function Find-Dialog {
     $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($window in $windows) {
-        $p = Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
-        if ($p -and $p.ProcessName -eq 'msiexec' -and -not $window.Current.IsOffscreen) {
-            if ($window.Current.Name -match 'DeepFind|Windows Installer|Setup') { return $window }
-            if ($window.Current.ClassName -match 'MsiDialog|#32770') { return $window }
-        }
+        # Match the observed native MSI dialog class and product title first.
+        if ($window.Current.ClassName -eq 'MsiDialogCloseClass' -and $window.Current.Name -like '*DeepFind*') { return $window }
+        $pidValue = $window.Current.ProcessId
+        if (-not $pidValue) { continue }
+        $p = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+        if ($p -and $p.ProcessName -eq 'msiexec' -and -not $window.Current.IsOffscreen -and
+            $window.Current.Name -match 'DeepFind|Windows Installer|Setup') { return $window }
     }
     foreach ($p in @(Get-Process msiexec -ErrorAction SilentlyContinue)) {
         if ($p.MainWindowHandle -ne 0) { return $ae::FromHandle($p.MainWindowHandle) }

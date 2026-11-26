@@ -106,7 +106,7 @@
                 <RadioButton Content="Excel" GroupName="Types" Tag="Excel" Checked="OnFilter" Style="{StaticResource FilterButton}" MinWidth="57" />
                 <ComboBox x:Name="SortBox" MinWidth="119" Margin="8,0,0,4" VerticalAlignment="Center"
                           Style="{StaticResource SoftComboBox}" ItemsSource="{Binding SortOptions, RelativeSource={RelativeSource AncestorType=Window}}"
-                          SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Sort}"
+                          SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Sort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                           AutomationProperties.Name="Sort results" AutomationProperties.AutomationId="SortBox" />
                 <Button Content="View ▾" Click="OnView" Style="{StaticResource SoftButton}" Margin="4,0,0,4"
                         AutomationProperties.Name="Result view options" AutomationProperties.AutomationId="ViewOptions">
