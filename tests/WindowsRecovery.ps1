@@ -82,14 +82,7 @@ function Capture($Element,[string]$Name) {
 function Read-Tracking {
     if (-not (Test-Path -LiteralPath $tracking -PathType Leaf)) { return }
     # Query only the disposable index in read-only mode. Catch startup/lock races.
-    $raw = & python -c 'import pathlib, sqlite3, sys, json
-try:
-    with sqlite3.connect(pathlib.Path(sys.argv[1]).as_uri()+"?mode=ro", uri=True, timeout=1) as db:
-        count=db.execute("select count(*) from files").fetchone()[0]
-        r,c=db.execute("select requested,completed from scan_jobs where id=1").fetchone()
-        print(json.dumps(dict(count=count,requested=r,completed=c)))
-except sqlite3.Error:
-    pass' $tracking
+    $raw = & python "$PSScriptRoot\ReadTracking.py" $tracking
     if ($LASTEXITCODE -ne 0) { throw 'Unable to query disposable tracking journal.' }
     if ($raw) { $raw | ConvertFrom-Json }
 }

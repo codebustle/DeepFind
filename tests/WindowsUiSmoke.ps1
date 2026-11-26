@@ -232,18 +232,24 @@ try {
         $r = $Window.Current.BoundingRectangle
         Write-Host "$Name actual bounds $($r.Width) x $($r.Height)."
     }
-    function Assert-VisibleInside($Window, $Control, [string]$Name) {
-        if (-not $Control -or $Control.Current.IsOffscreen) { throw "$Name missing or offscreen." }
-        $outer = $Window.Current.BoundingRectangle
-        $inner = $Control.Current.BoundingRectangle
-        if ($inner.Width -le 0 -or $inner.Height -le 0 -or $inner.Left -lt ($outer.Left-1) -or
-            $inner.Top -lt ($outer.Top-1) -or $inner.Right -gt ($outer.Right+1) -or $inner.Bottom -gt ($outer.Bottom+1)) {
-            throw "$Name bounds $inner escape window $outer."
+    function Assert-VisibleInside($Window, [scriptblock]$Lookup, [string]$Name) {
+        # Resize returns before WPF finishes its asynchronous measure/arrange.
+        # Re-resolve the actual element until the final arrangement is visible.
+        $null = Wait-For "$Name visible inside resized window" {
+            try {
+                $control = & $Lookup
+                if (-not $control -or $control.Current.IsOffscreen) { return $false }
+                $outer = $Window.Current.BoundingRectangle
+                $inner = $control.Current.BoundingRectangle
+                $inner.Width -gt 0 -and $inner.Height -gt 0 -and
+                    $inner.Left -ge ($outer.Left-1) -and $inner.Top -ge ($outer.Top-1) -and
+                    $inner.Right -le ($outer.Right+1) -and $inner.Bottom -le ($outer.Bottom+1)
+            } catch [System.Windows.Automation.ElementNotAvailableException] { $false }
         }
     }
     Resize-CheckedWindow $main 440 410 'Main minimum'
     foreach ($controlId in @('SearchBox','SortBox','ViewOptions','PageSize','FirstPage','PreviousPage','NextPage','LastPage','IndexSettingsButton','ResultsList')) {
-        Assert-VisibleInside $main (By-Id $main $controlId) $controlId
+        Assert-VisibleInside $main { By-Id $main $controlId } $controlId
     }
     Capture-Window $main 'light-minimum-main'
     Invoke-Control (By-Id $main IndexSettingsButton)
@@ -251,9 +257,9 @@ try {
     Resize-CheckedWindow $settings 440 405 'Settings minimum'
     foreach ($label in @('Folders','Status','Preferences')) {
         Select-Tab (By-Name $settings $label)
-        Assert-VisibleInside $settings (By-Name $settings $label) $label
-        Assert-VisibleInside $settings (By-Name $settings 'Apply changes') 'Apply changes'
-        Assert-VisibleInside $settings (By-Name $settings 'Close') 'Close'
+        Assert-VisibleInside $settings { By-Name $settings $label } $label
+        Assert-VisibleInside $settings { By-Name $settings 'Apply changes' } 'Apply changes'
+        Assert-VisibleInside $settings { By-Name $settings 'Close' } 'Close'
         Capture-Window $settings ("light-minimum-" + $label.ToLowerInvariant())
     }
     Invoke-Control (By-Name $settings 'Close')
