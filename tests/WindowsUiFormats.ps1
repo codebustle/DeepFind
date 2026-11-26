@@ -52,12 +52,18 @@ function Select-Folder($Window,[string]$Path) {
     [System.Windows.Forms.SendKeys]::SendWait('%d')
     [System.Windows.Forms.SendKeys]::SendWait('^v')
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-    $button=Wait-For 'native Select Folder control' {
-        $b=By-Name $Window 'Select Folder'
-        if (-not $b) { $b=By-Name $Window 'Select folder' }
-        if ($b -and $b.Current.IsEnabled) { $b }
+    # Shell navigation rebuilds the provider's element tree. Resolve a new
+    # dialog and visible button after Enter instead of reusing a stale root.
+    $button=Wait-For 'native Select Folder control after navigation' {
+        try {
+            $fresh=Find-NativeDialogTitle 'Choose folders to index'
+            if ($fresh) {
+                $b=By-Name $fresh 'Select Folder'
+                if ($b -and $b.Current.IsEnabled -and -not $b.Current.IsOffscreen) { $b }
+            }
+        } catch [System.Windows.Automation.ElementNotAvailableException] { }
     }
-    Click-NativeMessageButton $Window $button.Current.Name
+    Click-TestControl $button
 }
 function Find-Result([string]$Name) {
     By-Name (By-Id $script:main ResultsList) $Name
@@ -154,7 +160,7 @@ try {
         $null=Wait-For "query $($query.Text)" { Assert-Count $query.Count }
     }
     Set-Text (By-Id $main SearchBox) 'ext:pdf OR'
-    $null=Wait-For 'invalid grammar feedback' { By-Name $main 'OR needs a search term on both sides.' }
+    $null=Wait-For 'invalid grammar feedback' { By-Name $main 'Use words, quotes for an exact phrase, AND, OR, filename:, or ext:.' }
     $search=By-Id $main SearchBox
     $search.SetFocus()
     [System.Windows.Forms.SendKeys]::SendWait('^a')

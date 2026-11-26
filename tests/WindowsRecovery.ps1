@@ -64,7 +64,8 @@ function Wait-Main {
         $script:process.Refresh()
         if ($script:process.HasExited) { throw "Application exited: $($script:process.ExitCode)." }
         if ($script:process.MainWindowHandle -ne 0 -and $script:process.MainWindowTitle -eq 'DeepFind') {
-            $ae::FromHandle($script:process.MainWindowHandle)
+            $candidate=$ae::FromHandle($script:process.MainWindowHandle)
+            if ($candidate -and $candidate.Current.ClassName -ne '#32770' -and (By-Id $candidate SearchBox)) { $candidate }
         }
     }
 }
@@ -200,10 +201,12 @@ try {
     Click-NativeMessageButton $prompt 'No'
     if (-not $process.WaitForExit(15000) -or $process.ExitCode -ne 1) { throw 'Declining recovery should exit with failure.' }
     if (-not (Test-Path -LiteralPath $segment) -or (Get-FileHash -LiteralPath $segment).Hash -ne $badHash) { throw 'Declining recovery modified the damaged index.' }
+    Write-Host 'Declined corruption recovery exited and preserved exact damaged manifest hash.'
     Start-App
     $prompt=Wait-For 'accept corruption recovery' { Find-NativeMessageDialog $message }
     Capture $prompt 'recovery-corrupt-confirmation-yes'
     Click-NativeMessageButton $prompt 'Yes'
+    Write-Host 'Confirmed explicit corruption recovery; waiting for actual WPF SearchBox.'
     Wait-Main
     Set-Query 'recoverableoriginal'
     $null=Wait-For 'acceptance rebuilds original content' {
