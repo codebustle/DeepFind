@@ -24,7 +24,7 @@ This branch is an implementation candidate, not a release. Use disposable source
 | Corruption, permissions, storage and recovery | AC-19 | Windows controlled failure cases |
 | Build, tests, artifact and all above cases | AC-20 | Exact SHA CI, complete recorded scenario results |
 
-Desktop checkbox and silent opt-in are now candidate implementations; test the actual interactive checked and unchecked Finish paths before release. Do not mark DF-02 resolved until actual installation is verified. No release approval until the complete matrix passes.
+Desktop checkbox and silent opt-in were verified, including actual interactive checked and unchecked Finish and the resulting shortcut/absence (see execution below). No release approval until the complete matrix passes.
 
 ## Verified execution (Windows Server 2025, build 26100)
 
@@ -34,4 +34,6 @@ Interactive installer test on 5b9c2ee passed Welcome navigation via a scoped act
 
 ## Next runtime coverage
 
-Added installed UI assertions for the remaining three page sizes and last/previous navigation, eight directional sorts using three distinct file sizes/timestamps, visible controls at minimum main/settings dimensions, unavailable source feedback with indexing paused, confirmed and cancelled Rebuild preserving original test files, and restart with saved page size, hidden path, Light theme and index-ready status. These are pending execution on the new SHA. Still required: folder chooser, all type filters/badges, external open/reveal, complete preference validation, controlled interrupted/recovery/network scenarios, Contrast theme and target Windows 11 client/DPI. Release remains blocked until covered.
+Added installed UI assertions for the remaining three page sizes and last/previous navigation, eight directional sorts using three distinct file sizes/timestamps, visible controls at minimum main/settings dimensions, unavailable source feedback with indexing paused, confirmed and cancelled Rebuild preserving original test files, and restart with saved page size, hidden path, Light theme and index-ready status. [Run 45826388139](https://github.com/codebustle/DeepFind/actions/runs/45826388139) (7160cdf) verified all five sizes, all four page navigation controls and eight directional sorts with real metadata. [440×410 actual screenshot](https://github.com/codebustle/DeepFind/actions/runs/45826388139/artifacts/15119394341) shows the wrapped UI with every command visible. The immediate UIA bounds test ran before WPF layout settled; the SQLite probe failed due legacy PowerShell native string quoting. Both tests now retain their assertions and use stable bounds and a standalone read-only probe. Later scenarios are pending.
+
+The next CI uses separate clean Windows VMs for interface, native MSI, formats/first run/preferences, 10,001-file interruption and corruption recovery, loopback SMB disconnect/reconnect/overlap/retry and paused restart, plus V2 upgrade. A single candidate MSI and eight validated fixtures are built and shared via artifacts. Every job has independently named evidence and a time limit; no preceding run can contaminate its settings or index. Release remains blocked until all AC-01–20 are completely evidenced, including target Windows 11 x64 client, actual DPI/Contrast and remaining edge cases.

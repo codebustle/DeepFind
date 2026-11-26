@@ -15,7 +15,10 @@ New-Item -ItemType Directory -Path $source,$parent -Force | Out-Null
 $encoding = [Text.UTF8Encoding]::new($false)
 for ($i=0; $i -lt 10001; $i++) {
     $name = 'bulk-{0:D5}.txt' -f $i
-    $content = if ($i -eq 10000) { 'bulkneedle uniquebulkword' } else { 'bulkneedle' }
+    $content = 'bulkneedle'
+    if ($i -lt 1000) { $content += ' thousandexact' }
+    if ($i -lt 1001) { $content += ' thousandandoneexact' }
+    if ($i -eq 10000) { $content += ' uniquebulkword' }
     [IO.File]::WriteAllText((Join-Path $source $name),$content,$encoding)
 }
 function Write-Settings($Root,$IndexParent,$Paused=$false) {
@@ -129,6 +132,24 @@ try {
     Capture $main 'recovery-bulk-last-page'
     Invoke-Control (By-Id $main PreviousPage)
     $null=Wait-For 'previous page has correct range' { Assert-Range 'Page 40 / 41' '9,751–10,000 of 10,001 results' }
+    Set-Query 'thousandexact'
+    $null=Wait-For '1000 results exactly four pages' { Assert-Range 'Page 1 / 4' '1–250 of 1,000 results' }
+    for ($page=2;$page -le 4;$page++) {
+        Invoke-Control (By-Id $main NextPage)
+        $expectedPage="Page $page / 4"
+        $start=($page-1)*250+1
+        $end=$page*250
+        $expectedRange=('{0:N0}–{1:N0} of 1,000 results' -f $start,$end)
+        $null=Wait-For "1000 fixture range $expectedRange" { Assert-Range $expectedPage $expectedRange }
+    }
+    if ((By-Id $main NextPage).Current.IsEnabled) { throw 'Last exact-full page did not disable Next.' }
+    Set-Query 'thousandandoneexact'
+    $null=Wait-For '1001 results exactly five pages' { Assert-Range 'Page 1 / 5' '1–250 of 1,001 results' }
+    Invoke-Control (By-Id $main LastPage)
+    $null=Wait-For '1001 final one-row page' { Assert-Range 'Page 5 / 5' '1,001–1,001 of 1,001 results' }
+    if ((By-Id $main NextPage).Current.IsEnabled) { throw 'Partial final page did not disable Next.' }
+    Capture $main 'recovery-1001-final-page'
+    Write-Host 'Actual UI 1000 and 1001 match boundary ranges and final page assertions passed.'
     # Several rapid query updates should never leave a stale result after final request.
     Set-Query 'missingbulkword'
     Set-Query 'bulkneedle'
