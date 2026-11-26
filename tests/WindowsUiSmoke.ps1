@@ -290,6 +290,165 @@ try {
     $null = Wait-For 'Resume restores original result set' { Assert-Page 'Page 1 / 2' } 90
     Write-Host 'Confirmed Clear removes only index, preserves 51 originals and Resume restores search results.'
 
+
+    # Exercise every page-size option and both end controls, with actual persisted choices.
+    foreach ($size in @(250,500,1000)) {
+        Select-Combo $main PageSize ([string]$size)
+        $null = Wait-For "page size $size" { (Read-Settings).PageSize -eq $size -and (Assert-Page 'Page 1 / 1') }
+    }
+    Select-Combo $main PageSize '50'
+    $null = Wait-For 'restore 50 per page' { (Read-Settings).PageSize -eq 50 -and (Assert-Page 'Page 1 / 2') }
+    Invoke-Control (By-Id $main LastPage)
+    $null = Wait-For 'Last page shortcut' { Assert-Page 'Page 2 / 2' }
+    Invoke-Control (By-Id $main PreviousPage)
+    $null = Wait-For 'Previous page' { Assert-Page 'Page 1 / 2' }
+    Write-Host 'All five page sizes and all four navigation actions passed.'
+
+    # A deliberately unordered set of distinct timestamps and file sizes.
+    $sortFiles = @(
+        @{Name='sortfixture-a.txt'; Text='sortfixture'; Modified='2023-06-03T12:00:00Z'},
+        @{Name='sortfixture-b.txt'; Text=('sortfixture ' + ('b' * 100)); Modified='2023-06-01T12:00:00Z'},
+        @{Name='sortfixture-c.txt'; Text=('sortfixture ' + ('c' * 200)); Modified='2023-06-02T12:00:00Z'}
+    )
+    foreach ($file in $sortFiles) {
+        $filePath = Join-Path $fixture $file.Name
+        Set-Content -LiteralPath $filePath -Value $file.Text
+        [IO.File]::SetLastWriteTimeUtc($filePath, [DateTimeOffset]::Parse($file.Modified).UtcDateTime)
+    }
+    Set-Text (By-Id $main SearchBox) 'sortfixture'
+    $null = Wait-For 'three sort fixtures' { (By-Id $main ResultCount).Current.Name -eq '1–3 of 3 results' } 60
+    $cases = @(
+        @{Index=1; Label='Modified — newest'; First='sortfixture-a.txt'},
+        @{Index=2; Label='Modified — oldest'; First='sortfixture-b.txt'},
+        @{Index=3; Label='Name — A to Z'; First='sortfixture-a.txt'},
+        @{Index=4; Label='Name — Z to A'; First='sortfixture-c.txt'},
+        @{Index=5; Label='Size — largest'; First='sortfixture-c.txt'},
+        @{Index=6; Label='Size — smallest'; First='sortfixture-a.txt'},
+        @{Index=7; Label='Path — A to Z'; First='sortfixture-a.txt'},
+        @{Index=8; Label='Path — Z to A'; First='sortfixture-c.txt'}
+    )
+    $listItem = [System.Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem)
+    foreach ($case in $cases) {
+        Select-Combo $main SortBox $case.Label $case.Index
+        $null = Wait-For "first $($case.Label) result is $($case.First)" {
+            $first = (By-Id $main ResultsList).FindFirst($scope, $listItem)
+            $first -and $first.Current.Name -eq $case.First
+        }
+        Write-Host "Sort verified: $($case.Label) -> $($case.First)"
+    }
+    Select-Combo $main SortBox 'Relevance' 0
+    $null = Wait-For 'relevance returns three matches' { (By-Id $main ResultCount).Current.Name -eq '1–3 of 3 results' }
+
+    # Check narrow layout with the OS resize pattern and visible control bounds.
+    function Resize-CheckedWindow($Window, [int]$Width, [int]$Height, [string]$Name) {
+        $transform = Require-Pattern $Window ([System.Windows.Automation.TransformPattern]::Pattern)
+        if (-not $transform.Current.CanResize) { throw "Cannot resize $Name." }
+        $transform.Resize($Width,$Height)
+        $null = Wait-For "$Name resize to $Width x $Height" {
+            $r = $Window.Current.BoundingRectangle
+            [Math]::Abs($r.Width - $Width) -le 25 -and [Math]::Abs($r.Height - $Height) -le 25
+        }
+        $r = $Window.Current.BoundingRectangle
+        Write-Host "$Name actual bounds $($r.Width) x $($r.Height)."
+    }
+    function Assert-VisibleInside($Window, $Control, [string]$Name) {
+        if (-not $Control -or $Control.Current.IsOffscreen) { throw "$Name missing or offscreen." }
+        $outer = $Window.Current.BoundingRectangle
+        $inner = $Control.Current.BoundingRectangle
+        if ($inner.Width -le 0 -or $inner.Height -le 0 -or $inner.Left -lt ($outer.Left-1) -or
+            $inner.Top -lt ($outer.Top-1) -or $inner.Right -gt ($outer.Right+1) -or $inner.Bottom -gt ($outer.Bottom+1)) {
+            throw "$Name bounds $inner escape window $outer."
+        }
+    }
+    Resize-CheckedWindow $main 440 410 'Main minimum'
+    foreach ($controlId in @('SearchBox','SortBox','ViewOptions','PageSize','FirstPage','PreviousPage','NextPage','LastPage','IndexSettingsButton','ResultsList')) {
+        Assert-VisibleInside $main (By-Id $main $controlId) $controlId
+    }
+    Capture-Window $main 'light-minimum-main'
+    Invoke-Control (By-Id $main IndexSettingsButton)
+    $settings = Wait-For 'settings at minimum' { Find-AppElement 'Index settings' }
+    Resize-CheckedWindow $settings 440 405 'Settings minimum'
+    foreach ($label in @('Folders','Status','Preferences')) {
+        Select-Tab (By-Name $settings $label)
+        Assert-VisibleInside $settings (By-Name $settings $label) $label
+        Assert-VisibleInside $settings (By-Name $settings 'Apply changes') 'Apply changes'
+        Assert-VisibleInside $settings (By-Name $settings 'Close') 'Close'
+        Capture-Window $settings ("light-minimum-" + $label.ToLowerInvariant())
+    }
+    Invoke-Control (By-Name $settings 'Close')
+    $null = Wait-For 'minimum settings closed' { -not (Find-AppElement 'Index settings') }
+    Resize-CheckedWindow $main 970 690 'Main default'
+    Write-Host 'Main and settings minimum dimensions and required control bounds passed.'
+
+    # Missing source should be reported instead of passing a stale path to the shell.
+    Invoke-Control (By-Id $main IndexSettingsButton)
+    $settings = Wait-For 'pause for unavailable file' { Find-AppElement 'Index settings' }
+    Select-Tab (By-Name $settings 'Status')
+    Invoke-Control (By-Name $settings 'Pause')
+    $null = Wait-For 'pause before moving source' { (Read-Settings).Paused -eq $true -and (By-Name $settings 'Resume').Current.IsEnabled }
+    Invoke-Control (By-Name $settings 'Close')
+    $null = Wait-For 'settings closed before missing-file test' { -not (Find-AppElement 'Index settings') }
+    Set-Text (By-Id $main SearchBox) 'uniqueuiword'
+    $null = Wait-For 'indexed original is visible' { (Assert-Page 'Page 1 / 1') -and (By-Name $main 'document-050.txt') }
+    (By-Id $main SearchBox).SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+    $null = Wait-For 'result selected before original unavailable' {
+        $row = By-Name (By-Id $main ResultsList) 'document-050.txt'
+        if ($row) { (Require-Pattern $row ([System.Windows.Automation.SelectionItemPattern]::Pattern)).Current.IsSelected }
+    }
+    $original = Join-Path $fixture 'document-050.txt'
+    $temporary = Join-Path $fixture 'temporarily-unavailable-original.txt'
+    Move-Item -LiteralPath $original -Destination $temporary
+    try {
+        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+        $null = Wait-For 'unavailable file feedback' { Find-AppControl 'The file is currently unavailable.' ([System.Windows.Automation.ControlType]::Text) }
+        $ok = Wait-For 'unavailable file confirmation' { Find-AppControl 'OK' ([System.Windows.Automation.ControlType]::Button) }
+        Invoke-Control $ok
+        $null = Wait-For 'missing-file dialog dismissed' { -not (Find-AppControl 'The file is currently unavailable.' ([System.Windows.Automation.ControlType]::Text)) }
+        Write-Host 'Unavailable original produces understandable feedback without launching an absent file.'
+    } finally {
+        Move-Item -LiteralPath $temporary -Destination $original
+    }
+
+    Invoke-Control (By-Id $main IndexSettingsButton)
+    $settings = Wait-For 'settings for rebuild' { Find-AppElement 'Index settings' }
+    Select-Tab (By-Name $settings 'Status')
+    Invoke-Control (By-Name $settings 'Rebuild index')
+    $no = Wait-For 'cancel rebuild' { Find-AppControl 'No' ([System.Windows.Automation.ControlType]::Button) }
+    Invoke-Control $no
+    $null = Wait-For 'declined rebuild keeps paused state' { (Read-Settings).Paused -eq $true -and -not (Find-AppControl 'No' ([System.Windows.Automation.ControlType]::Button)) }
+    Invoke-Control (By-Name $settings 'Rebuild index')
+    $yes = Wait-For 'confirm rebuild' { Find-AppControl 'Yes' ([System.Windows.Automation.ControlType]::Button) }
+    Invoke-Control $yes
+    $null = Wait-For 'rebuild resumes indexing' { (Read-Settings).Paused -eq $false -and (By-Name $settings 'Pause').Current.IsEnabled }
+    Invoke-Control (By-Name $settings 'Close')
+    $null = Wait-For 'rebuild restores unique match' { (Assert-Page 'Page 1 / 1') -and (By-Name $main 'document-050.txt') } 90
+    if (@(Get-ChildItem -LiteralPath $fixture -Filter '*.txt' -File).Count -ne 54) { throw 'Rebuild changed original files.' }
+    Write-Host 'Declined and confirmed Rebuild preserve original files and restore indexed results.'
+
+    # Set a non-default combination and verify actual restart behavior.
+    Select-Combo $main PageSize '250'
+    $null = Wait-For 'nondefault page size saved' { (Read-Settings).PageSize -eq 250 }
+    Invoke-Control (By-Id $main ViewOptions)
+    Toggle-ResultOption 'File path'
+    $null = Wait-For 'path disabled persisted' { -not (Read-Settings).ShowPath }
+    [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+    if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) { throw 'First close before restart failed.' }
+    $process = Start-Process $Application -PassThru
+    $main = Wait-For 'main window after restart' {
+        $process.Refresh()
+        if ($process.HasExited) { throw 'Application exited on restart.' }
+        if ($process.MainWindowHandle -ne 0) { $ae::FromHandle($process.MainWindowHandle) }
+    }
+    $null = Wait-For 'restart restores 54 results and up-to-date status' {
+        (By-Id $main ResultCount).Current.Name -eq '1–54 of 54 results' -and (By-Name $main 'Index up to date')
+    } 90
+    $null = Wait-For 'restart settings remain persisted' { $s = Read-Settings; $s.PageSize -eq 250 -and -not $s.ShowPath -and $s.Theme -eq 'Light' }
+    Set-Text (By-Id $main SearchBox) 'uniqueuiword'
+    $null = Wait-For 'restart hides file path in visible unique result' { (Assert-Page 'Page 1 / 1') -and (By-Name $main 'document-050.txt') -and -not (By-Name $main $original) }
+    Capture-Window $main 'light-restart-hidden-path'
+    Write-Host 'Restart retains 250 page size, Light theme and hidden path; all 54 indexed results and up-to-date status available.'
+
     if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
         throw 'App did not close cleanly after UI scenario.'
     }
