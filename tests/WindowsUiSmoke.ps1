@@ -293,10 +293,10 @@ try {
 
     # Exercise every page-size option and both end controls, with actual persisted choices.
     foreach ($size in @(250,500,1000)) {
-        Select-Combo $main PageSize ([string]$size)
+        Select-Combo $main PageSize ([string]$size) ([array]::IndexOf(@(50,100,250,500,1000),$size))
         $null = Wait-For "page size $size" { (Read-Settings).PageSize -eq $size -and (Assert-Page 'Page 1 / 1') }
     }
-    Select-Combo $main PageSize '50'
+    Select-Combo $main PageSize '50' 0
     $null = Wait-For 'restore 50 per page' { (Read-Settings).PageSize -eq 50 -and (Assert-Page 'Page 1 / 2') }
     Invoke-Control (By-Id $main LastPage)
     $null = Wait-For 'Last page shortcut' { Assert-Page 'Page 2 / 2' }
@@ -427,7 +427,7 @@ try {
     Write-Host 'Declined and confirmed Rebuild preserve original files and restore indexed results.'
 
     # Set a non-default combination and verify actual restart behavior.
-    Select-Combo $main PageSize '250'
+    Select-Combo $main PageSize '250' 2
     $null = Wait-For 'nondefault page size saved' { (Read-Settings).PageSize -eq 250 }
     Invoke-Control (By-Id $main ViewOptions)
     Toggle-ResultOption 'File path'
