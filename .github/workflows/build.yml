@@ -97,6 +97,25 @@ jobs:
           if (Test-Path $desktopPath) { throw "Owned Desktop shortcut remained after uninstall." }
           & powershell.exe -NoProfile -File tests/WindowsInstallerUi.ps1 -Msi $msi[0].FullName
           if ($LASTEXITCODE -ne 0) { throw "Interactive installer UI test failed." }
+      - name: Test interrupted indexing, large result pages and corruption recovery
+        if: ${{ !cancelled() && steps.candidate_installer.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($msi.Count -ne 1) { throw 'Expected one candidate MSI.' }
+          $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
+          function Invoke-Installer($operation, $log) {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`""
+            $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
+          }
+          Invoke-Installer /i deepfind-recovery-install.log
+          try {
+            & powershell.exe -NoProfile -File tests/WindowsRecovery.ps1 -Application $application
+            if ($LASTEXITCODE -ne 0) { throw 'Windows indexing recovery scenarios failed.' }
+          } finally {
+            Invoke-Installer /x deepfind-recovery-uninstall.log
+          }
       - name: Check out immutable V2 baseline
         id: baseline_checkout
         if: ${{ !cancelled() && steps.candidate_installer.outcome == 'success' }}

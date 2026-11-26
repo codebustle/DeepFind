@@ -324,6 +324,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
                         IndexMessage = $"Indexing new/changed files · {value.Updated:N0} processed · {value.Processed:N0} checked";
                     else if (value.Message == "Checking indexed folders")
                         IndexMessage = $"Checking indexed folders · {value.Processed:N0} checked";
+                    else if (value.Message == "Index is up to date")
+                        Log.Information("Index reconciliation completed: {Checked} checked, {Updated} new or changed, {Notices} notices",
+                            value.Processed, value.Updated, value.Errors);
                 });
                 await coordinator.ReconcileAsync(effective, progress, token, roots, retryPath);
                 foreach (var root in roots ?? Settings.Folders)
