@@ -246,6 +246,9 @@ public partial class MainWindow : Window
         SystemEvents.UserPreferenceChanged -= OnPreferencesChanged;
         model.PropertyChanged -= OnModelChanged;
         IsEnabled = false;
+        // Closing may finish synchronously when no scan/search is active. Let the
+        // first cancelled WPF Closing event unwind before invoking Close again.
+        await Task.Yield();
         try { await model.CloseAsync(); }
         finally { allowClose = true; Close(); }
     }

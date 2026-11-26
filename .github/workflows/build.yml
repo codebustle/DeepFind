@@ -55,9 +55,9 @@ jobs:
               if ($process.MainWindowHandle -eq 0 -or $process.MainWindowTitle -ne 'DeepFind') {
                 throw "DeepFind did not open its main window."
               }
-              if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
-                throw "DeepFind did not close cleanly."
-              }
+              if (-not $process.CloseMainWindow()) { throw "DeepFind window rejected the close request." }
+              if (-not $process.WaitForExit(15000)) { throw "DeepFind stayed alive after close." }
+              if ($process.ExitCode -ne 0) { throw "DeepFind exited with code $($process.ExitCode) after closing." }
             } finally {
               if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
             }
@@ -71,7 +71,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-logs
-          path: ${{ runner.temp }}/deepfind-*.log
+          path: |
+            ${{ runner.temp }}/deepfind-*.log
+            ${{ env.LOCALAPPDATA }}/DeepFind/Logs/*.log
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
