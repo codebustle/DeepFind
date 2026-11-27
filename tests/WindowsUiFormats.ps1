@@ -185,7 +185,10 @@ try {
     $selected=Select-Result 'notes.txt'
     Right-ClickResult (Find-Result 'maintenance.md')
     Invoke-Control (Result-Menu 'Copy path')
-    $null=Wait-For 'right-click copies path of actual clicked row' { (Get-Clipboard -Raw) -eq (Join-Path $fixture 'maintenance.md') }
+    $null=Wait-For 'right-click copies path of actual clicked row' {
+        try { (Get-Clipboard -Raw -ErrorAction Stop) -eq (Join-Path $fixture 'maintenance.md') }
+        catch [System.Runtime.InteropServices.ExternalException] { $false }
+    }
     Right-ClickResult (Find-Result 'notes.txt')
     Invoke-Control (Result-Menu 'Preview')
     $preview=Wait-For 'context menu preview' { Find-AppElement 'notes.txt' }
