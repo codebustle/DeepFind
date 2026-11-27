@@ -176,7 +176,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Launch(ResultRow row, bool reveal)
+    private async void Launch(ResultRow row, bool reveal)
     {
         var path = row.Hit.File.Path;
         if (!System.IO.File.Exists(path))
@@ -187,13 +187,23 @@ public partial class MainWindow : Window
 
         try
         {
-            var launch = reveal ? new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
-                : new ProcessStartInfo(path) { UseShellExecute = true, Verb = "open" };
-            Process.Start(launch)?.Dispose();
+            if (reveal)
+            {
+                // The command-line /select route may open the folder without selecting
+                // the item. Use an absolute Shell item identifier and the selection API.
+                await Task.Run(() => ShellSelection.Reveal(path));
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "open" })?.Dispose();
+            }
         }
-        catch (Exception error) when (error is Win32Exception or InvalidOperationException)
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or
+                                      System.Runtime.InteropServices.COMException or
+                                      System.IO.IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(this, "Windows could not open the selected file.", Title);
+            if (!closing)
+                MessageBox.Show(this, "Windows could not open the selected file.", Title);
         }
     }
 

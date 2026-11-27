@@ -209,18 +209,29 @@ try {
     }
     if (-not $opened.CloseMainWindow()) { throw 'Could not close the newly opened test note.' }
     $null=$opened.WaitForExit(15000)
+    Write-Host 'Actual Open file launched the expected Notepad document.'
     (By-Id $main SearchBox).SetFocus()
     Right-ClickResult (Find-Result 'notes.txt')
     Invoke-Control (Result-Menu 'Show in Explorer')
     $shell=New-Object -ComObject Shell.Application
-    $null=Wait-For 'Explorer selected precise synthetic file' {
+    try {
+        $null=Wait-For 'Explorer selected precise synthetic file' {
+            foreach ($window in @($shell.Windows())) {
+                try {
+                    foreach ($item in @($window.Document.SelectedItems())) {
+                        if ($item.Path -eq $notesPath) { return $true }
+                    }
+                } catch { }
+            }
+        }
+    } catch {
         foreach ($window in @($shell.Windows())) {
             try {
-                foreach ($item in @($window.Document.SelectedItems())) {
-                    if ($item.Path -eq $notesPath) { return $true }
-                }
-            } catch { }
+                $paths=@($window.Document.SelectedItems() | ForEach-Object Path)
+                Write-Host "Explorer evidence: $($window.LocationURL); selected=$($paths -join '; ')"
+            } catch { Write-Host "Explorer evidence unavailable: $($_.Exception.GetType().Name)" }
         }
+        throw
     }
     (By-Id $main SearchBox).SetFocus()
     Write-Host 'Windows Open file and Show in Explorer selected the exact test file.'
