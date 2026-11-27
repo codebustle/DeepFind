@@ -134,6 +134,66 @@ try {
     if (@(Get-ChildItem -LiteralPath $source -File -Recurse).Count -ne 3) { throw 'Source file count changed.' }
     Write-Host 'Paused restart does not extract new source files until Resume.'
     Close-Main
+
+    # Mutate only the disposable sources while the application is not running.
+    [IO.File]::WriteAllText($first,'networkneedle closedchangedword')
+    $renamed=Join-Path $child 'network-renamed.txt'
+    Move-Item -LiteralPath $second -Destination $renamed
+    Remove-Item -LiteralPath $third
+    $newFile=Join-Path $source 'network-added.txt'
+    [IO.File]::WriteAllText($newFile,'networkneedle closedaddedword')
+    Start-Main
+    $null=Wait-For 'closed changes reconcile to three distinct files' {
+        (Assert-Count 3) -and (By-Name $main 'Index up to date') -and
+        (By-Name $main 'network-first.txt') -and (By-Name $main 'network-renamed.txt') -and
+        (By-Name $main 'network-added.txt') -and -not (By-Name $main 'network-second.txt') -and
+        -not (By-Name $main 'network-paused.txt')
+    } 90
+    Set-Text (By-Id $main SearchBox) 'closedchangedword'
+    $null=Wait-For 'closed modification searchable' { (Assert-Count 1) -and (By-Name $main 'network-first.txt') }
+    Set-Text (By-Id $main SearchBox) 'closedaddedword'
+    $null=Wait-For 'closed addition searchable' { (Assert-Count 1) -and (By-Name $main 'network-added.txt') }
+    Set-Text (By-Id $main SearchBox) 'pausednetworkword'
+    $null=Wait-For 'closed deletion removed cached content' { Assert-Count 0 }
+    Set-Text (By-Id $main SearchBox) 'networkneedle'
+    $null=Wait-For 'all three post-restart matches' { Assert-Count 3 }
+    Write-Host 'Actual closed-app modification, addition, rename and deletion reconcile without duplicates.'
+
+    # Apply a temporary deny on the exact disposable child directory, not the
+    # share parent or any station-wide ACL. Restore it even if a check fails.
+    $originalAcl=Get-Acl -LiteralPath $child
+    try {
+        $deniedAcl=Get-Acl -LiteralPath $child
+        $rule=[System.Security.AccessControl.FileSystemAccessRule]::new(
+            $account,[System.Security.AccessControl.FileSystemRights]::ListDirectory,
+            [System.Security.AccessControl.AccessControlType]::Deny)
+        $deniedAcl.AddAccessRule($rule)
+        Set-Acl -LiteralPath $child -AclObject $deniedAcl
+        $denied=$false
+        try { $null=Get-ChildItem -LiteralPath $uncChild -ErrorAction Stop }
+        catch [System.UnauthorizedAccessException] { $denied=$true }
+        if (-not $denied) { throw 'Test did not establish actual source enumeration access denial.' }
+        $settings=Open-Status
+        Invoke-Control (By-Name $settings 'Update now')
+        $null=Wait-For 'access-denied source notice' { By-Name $settings 'Source is unavailable.' } 90
+        Capture-Window $settings 'network-access-denied-notices'
+        Close-Status $settings
+        $null=Wait-For 'access denied preserves all committed results' {
+            (Assert-Count 3) -and (By-Name $main 'network-renamed.txt') -and (By-Name $main 'Source unavailable')
+        }
+        Capture-Window $main 'network-access-denied-results'
+    } finally {
+        Set-Acl -LiteralPath $child -AclObject $originalAcl
+    }
+    $settings=Open-Status
+    Invoke-Control (By-Name $settings 'Update now')
+    Close-Status $settings
+    $null=Wait-For 'permission restored and all results available' {
+        (Assert-Count 3) -and (By-Name $main 'Index up to date') -and -not (By-Name $main 'Source unavailable')
+    } 90
+    if (@(Get-ChildItem -LiteralPath $source -File -Recurse).Count -ne 3) { throw 'Permission test changed source file count.' }
+    Write-Host 'Actual disposable UNC directory permission denial retains committed results; permission restoration reconciles notices.'
+    Close-Main
 } catch {
     Write-Host "Network acceptance failure: $($_.ScriptStackTrace)"
     if ($main -and $process -and -not $process.HasExited) { try { Capture-Window $main 'network-failure' } catch { Write-Host "Screenshot unavailable: $_" } }
