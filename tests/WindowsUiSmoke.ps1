@@ -180,9 +180,11 @@ try {
     }
     Select-Combo $main PageSize '50' 0
     $null = Wait-For 'restore 50 per page' { (Read-Settings).PageSize -eq 50 -and (Assert-Page 'Page 1 / 2') }
-    Invoke-Control (By-Id $main LastPage)
+    $last = Wait-For 'Last page control enabled after reflow' { $c = By-Id $main LastPage; if ($c -and $c.Current.IsEnabled -and -not $c.Current.IsOffscreen) { $c } }
+    Invoke-Control $last
     $null = Wait-For 'Last page shortcut' { Assert-Page 'Page 2 / 2' }
-    Invoke-Control (By-Id $main PreviousPage)
+    $previous = Wait-For 'Previous page control enabled after reflow' { $c = By-Id $main PreviousPage; if ($c -and $c.Current.IsEnabled -and -not $c.Current.IsOffscreen) { $c } }
+    Invoke-Control $previous
     $null = Wait-For 'Previous page' { Assert-Page 'Page 1 / 2' }
     Write-Host 'All five page sizes and all four navigation actions passed.'
 

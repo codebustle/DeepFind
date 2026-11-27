@@ -160,7 +160,7 @@ try {
         $null=Wait-For "query $($query.Text)" { Assert-Count $query.Count }
     }
     Set-Text (By-Id $main SearchBox) 'ext:pdf OR'
-    $null=Wait-For 'invalid grammar feedback' { By-Name $main 'Use words, quotes for an exact phrase, AND, OR, filename:, or ext:.' }
+    $null=Wait-For 'invalid grammar feedback' { (Assert-Count 0) -and (By-Name $main 'OR needs a search term on both sides.') }
     $search=By-Id $main SearchBox
     $search.SetFocus()
     [System.Windows.Forms.SendKeys]::SendWait('^a')
