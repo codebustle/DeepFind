@@ -78,7 +78,9 @@ function Right-ClickResult($Element) {
     if ($Element.Current.ProcessId -ne $script:process.Id -or $Element.Current.IsOffscreen) { throw 'Invalid target result.' }
     $r=$Element.Current.BoundingRectangle
     if ($r.Width -le 0 -or $r.Height -le 0) { throw 'Result not visible.' }
-    if (-not [DeepFindTestPointer]::SetCursorPos([int]($r.X+$r.Width/2),[int]($r.Y+$r.Height/2))) { throw 'Pointer movement failed.' }
+    $x=[int]($r.X+$r.Width/2); $y=[int]($r.Y+$r.Height/2)
+    Assert-TestPointerTarget $x $y
+    if (-not [DeepFindTestPointer]::SetCursorPos($x,$y)) { throw 'Pointer movement failed.' }
     [DeepFindTestPointer]::mouse_event(8,0,0,0,[UIntPtr]::Zero)
     [DeepFindTestPointer]::mouse_event(16,0,0,0,[UIntPtr]::Zero)
 }

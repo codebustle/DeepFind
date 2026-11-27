@@ -49,6 +49,34 @@ function Find-AppControl([string]$Name, $ControlType) {
 function Find-AppElement([string]$Name) {
     Find-AppControl $Name ([System.Windows.Automation.ControlType]::Window)
 }
+# UIA bounds alone do not prove that a point is unobstructed. In particular,
+# a first-run OS dialog can cover the app. Never click another process.
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class DeepFindPointerGuard {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X,Y; public POINT(int x,int y) { X=x; Y=y; } }
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(POINT p);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+    public static uint ProcessAt(int x,int y) {
+        IntPtr hwnd=WindowFromPoint(new POINT(x,y));
+        uint pid=0;
+        if(hwnd!=IntPtr.Zero) GetWindowThreadProcessId(hwnd,out pid);
+        return pid;
+    }
+}
+'@
+function Assert-TestPointerTarget([int]$X,[int]$Y) {
+    $hitProcess=0
+    $deadline=(Get-Date).AddSeconds(3)
+    do {
+        $hitProcess=[DeepFindPointerGuard]::ProcessAt($X,$Y)
+        if ($hitProcess -eq $script:process.Id) { return }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    throw "Actual UI click target is covered or outside DeepFind (expected PID $($script:process.Id), hit PID $hitProcess); refusing input."
+}
 function Click-TestControl($Element) {
     if ($Element.Current.ProcessId -ne $script:process.Id -or $Element.Current.IsOffscreen) {
         throw 'Refusing to click outside the visible disposable DeepFind window.'
@@ -56,6 +84,7 @@ function Click-TestControl($Element) {
     $rect = $Element.Current.BoundingRectangle
     if ($rect.Width -le 0 -or $rect.Height -le 0) { throw 'Control has empty click bounds.' }
     $x = [int]($rect.X + $rect.Width / 2); $y = [int]($rect.Y + $rect.Height / 2)
+    Assert-TestPointerTarget $x $y
     if (-not [DeepFindTestPointer]::SetCursorPos($x, $y)) { throw 'Could not move test pointer.' }
     [DeepFindTestPointer]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
     [DeepFindTestPointer]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
