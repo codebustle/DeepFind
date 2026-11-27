@@ -214,27 +214,103 @@ try {
     Right-ClickResult (Find-Result 'notes.txt')
     Invoke-Control (Result-Menu 'Show in Explorer')
     $shell=New-Object -ComObject Shell.Application
-    try {
-        $null=Wait-For 'Explorer selected precise synthetic file' {
-            foreach ($window in @($shell.Windows())) {
-                try {
-                    foreach ($item in @($window.Document.SelectedItems())) {
-                        if ($item.Path -eq $notesPath) { return $true }
-                    }
-                } catch { }
-            }
-        }
-    } catch {
+    function Test-ExactExplorerSelection([int]$Seconds=45) {
+        try {
+            $null=Wait-For 'Explorer selected precise synthetic file' {
+                foreach ($window in @($shell.Windows())) {
+                    try {
+                        foreach ($item in @($window.Document.SelectedItems())) {
+                            if ($item.Path -eq $notesPath) { return $true }
+                        }
+                    } catch { }
+                }
+            } $Seconds
+            return $true
+        } catch { return $false }
+    }
+    function Get-TestExplorerWindows {
         foreach ($window in @($shell.Windows())) {
             try {
+                $location=[Uri]$window.LocationURL
+                if ($location.IsFile -and [IO.Path]::GetFullPath($location.LocalPath).TrimEnd('\') -eq [IO.Path]::GetFullPath($fixture).TrimEnd('\')) {
+                    $window
+                }
+            } catch { }
+        }
+    }
+    function Close-TestExplorerWindows {
+        foreach ($window in @(Get-TestExplorerWindows)) {
+            try { $window.Quit() } catch { Write-Host "Could not close disposable fixture Explorer: $($_.Exception.GetType().Name)" }
+        }
+    }
+    $revealVerified=Test-ExactExplorerSelection
+    if ($revealVerified) {
+        Write-Host 'Windows Open file and Show in Explorer selected the exact test file.'
+    } else {
+        Capture-Window $main 'explorer-app-selection-failure'
+        foreach ($window in @(Get-TestExplorerWindows)) {
+            try {
                 $paths=@($window.Document.SelectedItems() | ForEach-Object Path)
-                Write-Host "Explorer evidence: $($window.LocationURL); selected=$($paths -join '; ')"
+                Write-Host "App Explorer evidence: $($window.LocationURL); selected=$($paths -join '; ')"
             } catch { Write-Host "Explorer evidence unavailable: $($_.Exception.GetType().Name)" }
         }
-        throw
+        # Control experiment on the same disposable Windows VM. Do not count
+        # this as a passing app action. Compare the native API with an explicit
+        # parent/child PIDL on the Windows PowerShell STA thread.
+        Close-TestExplorerWindows
+        try {
+            Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class DeepFindExplorerControl {
+    [DllImport("ole32.dll", ExactSpelling=true)] private static extern int CoInitializeEx(IntPtr p, uint mode);
+    [DllImport("ole32.dll", ExactSpelling=true)] private static extern void CoUninitialize();
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] private static extern int SHParseDisplayName(string name, IntPtr bind, out IntPtr id, uint input, out uint output);
+    [DllImport("shell32.dll", ExactSpelling=true)] private static extern IntPtr ILFindLastID(IntPtr id);
+    [DllImport("shell32.dll", ExactSpelling=true)] private static extern int SHOpenFolderAndSelectItems(IntPtr folder, uint count, IntPtr items, uint flags);
+    public static int Select(string parentPath, string filePath) {
+        int init=CoInitializeEx(IntPtr.Zero,2);
+        Marshal.ThrowExceptionForHR(init);
+        IntPtr parent=IntPtr.Zero, full=IntPtr.Zero, items=IntPtr.Zero;
+        try {
+            uint attrs;
+            Marshal.ThrowExceptionForHR(SHParseDisplayName(parentPath,IntPtr.Zero,out parent,0,out attrs));
+            Marshal.ThrowExceptionForHR(SHParseDisplayName(filePath,IntPtr.Zero,out full,0,out attrs));
+            IntPtr child=ILFindLastID(full);
+            if (child==IntPtr.Zero) throw new InvalidOperationException("No child PIDL");
+            items=Marshal.AllocHGlobal(IntPtr.Size);
+            Marshal.WriteIntPtr(items,child);
+            return SHOpenFolderAndSelectItems(parent,1,items,0);
+        } finally {
+            if(items!=IntPtr.Zero) Marshal.FreeHGlobal(items);
+            if(full!=IntPtr.Zero) Marshal.FreeCoTaskMem(full);
+            if(parent!=IntPtr.Zero) Marshal.FreeCoTaskMem(parent);
+            CoUninitialize();
+        }
     }
+}
+'@
+            $hr=[DeepFindExplorerControl]::Select($fixture,$notesPath)
+            $direct=Test-ExactExplorerSelection 10
+            Write-Host "Direct native STA explicit child control: HRESULT=$hr exactSelected=$direct"
+            Capture-Window $main 'explorer-direct-native-control'
+        } catch { Write-Host "Direct native control error: $($_.Exception.Message)" }
+        # A direct FolderView.SelectItem is a second independent control for the
+        # shell's ability to select the known fixture, not a substitute for app proof.
+        try {
+            $window=Wait-For 'disposable Explorer fixture folder' { Get-TestExplorerWindows } 10
+            if (@($window).Count -gt 1) { $window=@($window)[0] }
+            $fixtureItem=$window.Document.Folder.ParseName('notes.txt')
+            if (-not $fixtureItem -or $fixtureItem.Path -ne $notesPath) { throw 'Explorer did not resolve exact fixture item.' }
+            $window.Document.SelectItem($fixtureItem,29)
+            $comSelected=Test-ExactExplorerSelection 10
+            Write-Host "Direct Explorer FolderView.SelectItem control: exactSelected=$comSelected"
+            Capture-Window $main 'explorer-direct-folderview-control'
+        } catch { Write-Host "FolderView control error: $($_.Exception.Message)" }
+        Write-Host 'App Explorer selection remains unresolved; continue independent preference assertions, then fail this job.'
+    }
+    Close-TestExplorerWindows
     (By-Id $main SearchBox).SetFocus()
-    Write-Host 'Windows Open file and Show in Explorer selected the exact test file.'
 
     # Validate preference boundaries and real staged removal.
     $settings=Open-Settings
@@ -309,6 +385,7 @@ try {
     if (@(Get-ChildItem -LiteralPath $fixture -File).Count -ne 9) { throw 'Settings changed original files.' }
     Write-Host 'Custom index migration after restart, old data retained, confirmed folder removal and source preservation passed.'
     Close-Main
+    if (-not $revealVerified) { throw 'Actual app Explorer selection remains unverified; independent preferences completed.' }
 } catch {
     Write-Host "Additional UI failure: $($_.ScriptStackTrace)"
     if ($main -and $process -and -not $process.HasExited) { try { Capture-Window $main 'additional-ui-failure' } catch { Write-Host "Screenshot unavailable: $_" } }
