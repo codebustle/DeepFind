@@ -38,12 +38,24 @@ jobs:
   windows-acceptance:
     name: Windows acceptance (${{ matrix.scenario }})
     needs: build
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
-        scenario: [interface, installer, formats, network, recovery]
+        include:
+          - scenario: interface
+            runner: windows-latest
+          - scenario: installer
+            runner: windows-latest
+          - scenario: formats
+            runner: windows-latest
+          - scenario: network
+            runner: windows-latest
+          - scenario: recovery
+            runner: windows-latest
+          - scenario: formats-client-arm
+            runner: windows-11-arm
     steps:
       - uses: actions/checkout@v4
       - name: Download candidate MSI
@@ -51,8 +63,14 @@ jobs:
         with:
           name: DeepFind-Setup-x64-candidate
           path: installer/bin
+      - name: Record supplementary Windows client environment
+        if: matrix.scenario == 'formats-client-arm'
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          Write-Host "Client comparison: $($os.Caption), $($os.Version), build $($os.BuildNumber), architecture $($os.OSArchitecture); candidate remains x64."
       - name: Download validated format fixtures
-        if: matrix.scenario == 'formats'
+        if: matrix.scenario == 'formats' || matrix.scenario == 'formats-client-arm'
         uses: actions/download-artifact@v4
         with:
           name: deepfind-format-fixtures
@@ -135,7 +153,7 @@ jobs:
           & powershell.exe -NoProfile -File tests/WindowsInstallerUi.ps1 -Msi $msi[0].FullName
           if ($LASTEXITCODE -ne 0) { throw "Interactive installer UI test failed." }
       - name: Test first-run picker, document formats, result actions and preferences
-        if: matrix.scenario == 'formats'
+        if: matrix.scenario == 'formats' || matrix.scenario == 'formats-client-arm'
         timeout-minutes: 8
         shell: pwsh
         run: |
