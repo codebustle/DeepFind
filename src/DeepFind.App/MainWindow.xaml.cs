@@ -191,7 +191,7 @@ public partial class MainWindow : Window
             {
                 // The command-line /select route may open the folder without selecting
                 // the item. Use an absolute Shell item identifier and the selection API.
-                await Task.Run(() => ShellSelection.Reveal(path));
+                await ShellSelection.RevealAsync(path);
             }
             else
             {
@@ -203,7 +203,7 @@ public partial class MainWindow : Window
                                       System.IO.IOException or UnauthorizedAccessException)
         {
             if (!closing)
-                MessageBox.Show(this, "Windows could not open the selected file.", Title);
+                MessageBox.Show(this, reveal ? "Windows could not select the requested file." : "Windows could not open the selected file.", Title);
         }
     }
 
