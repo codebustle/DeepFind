@@ -26,8 +26,8 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="*" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <TabControl x:Name="Tabs" Style="{StaticResource SoftTabs}">
-            <TabItem Header="Folders" Style="{StaticResource SoftTab}" MinWidth="90">
+        <TabControl x:Name="Tabs" AutomationProperties.AutomationId="SettingsTabs" Style="{StaticResource SoftTabs}">
+            <TabItem Header="Folders" Style="{StaticResource SoftTab}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
                         <TextBlock Text="Indexed folders" FontSize="14" FontWeight="SemiBold" />
@@ -78,7 +78,7 @@
                     </Grid>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Status" Style="{StaticResource SoftTab}" MinWidth="82">
+            <TabItem Header="Status" Style="{StaticResource SoftTab}">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                         <DockPanel LastChildFill="True" Margin="0,0,0,13">
@@ -155,9 +155,9 @@
                     </ListBox>
                 </DockPanel>
             </TabItem>
-            <TabItem Header="Preferences" Style="{StaticResource SoftTab}" MinWidth="114">
+            <TabItem Header="Preferences" Style="{StaticResource SoftTab}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel>
+                    <StackPanel Margin="0,0,18,0">
                         <TextBlock Text="Indexing" Style="{StaticResource SectionTitle}" Margin="0,0,0,10" />
                         <Label Content="Maximum file size (MB)" Target="{Binding ElementName=MaxSize}" Style="{StaticResource FieldLabel}" />
                         <TextBox x:Name="MaxSize" Style="{StaticResource SoftTextBox}" MaxLength="5" />
@@ -168,7 +168,7 @@
                             <TextBlock Text="Exclude paths or names (one pattern per line, * and ? supported)" TextWrapping="Wrap" />
                         </Label>
                         <TextBox x:Name="Exclusions" Style="{StaticResource SoftTextBox}" AcceptsReturn="True" MinHeight="51"
-                                 MaxHeight="80" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" />
+                                 MaxHeight="80" Padding="9,4,25,4" TextWrapping="Wrap" VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" />
                         <Grid Margin="0,12,0,0" x:Name="IntervalsGrid" SizeChanged="OnIntervalsSizeChanged">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>

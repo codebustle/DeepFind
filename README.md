@@ -18,7 +18,7 @@ The test project can also run on Linux with `dotnet test tests/DeepFind.Tests -c
 
 1. Open **Index settings**, add one or more folders, and choose **Apply changes**. Indexing runs while DeepFind is open.
 2. Enter a word such as `apple`, quote an exact phrase such as `"hellow world"`, or use `AND`, `OR`, `filename:`, and `ext:`. Adjacent terms require both matches. The extension restriction applies to the whole search.
-3. Filter or sort the results. Press Enter on a selected result to open the file, Ctrl+P to preview indexed text, or Ctrl+C to copy its path. The result menu also opens Explorer. Ctrl+F or Ctrl+L focuses search.
+3. Filter or sort the results, navigate all matching pages, or select 50, 100, 250, 500 or 1,000 matches per page. **View** controls which metadata and excerpt fields are visible; preferences persist. Press Enter on a selected result to open the file, Ctrl+P to preview indexed text, or Ctrl+C to copy its path. The result menu also opens Explorer. Ctrl+F or Ctrl+L focuses search.
 
 PDF, DOCX, XLSX, PPTX, TXT, Markdown, CSV, and HTML are supported. Image-only PDFs need OCR. Other formats can optionally appear in filename and path results. PDF excerpts show the page, and spreadsheet excerpts show the worksheet and cell when known. Extraction is bounded to the first million characters or 20,000 text segments. Large or unreadable files can still appear by name. The **Status** tab shows document notices and allows retries, pause, resume, clear, and rebuild.
 
@@ -35,6 +35,6 @@ dotnet publish src/DeepFind.App -c Release -r win-x64 --self-contained -p:Publis
 dotnet build installer/DeepFind.Installer.wixproj -c Release
 ```
 
-Open `DeepFind-Setup-x64.msi` from the installer build output and follow the setup wizard. The installer is unsigned. Close DeepFind before upgrading or uninstalling. To keep settings and indexed data, uninstall through Windows Settings. To remove the default data directory as part of uninstall, run `msiexec /x DeepFind-Setup-x64.msi REMOVEINDEX=1` with the installer used for the installed version. Clear any custom index location from the application before uninstalling.
+Open `DeepFind-Setup-x64.msi` from the installer build output and follow the setup wizard. A Start Menu entry is installed; on the final setup page you may choose **Create a desktop shortcut**. Silent installation omits the Desktop link unless explicitly requested with `msiexec /i DeepFind-Setup-x64.msi /quiet DESKTOPSHORTCUT=1`. The installer is unsigned. Close DeepFind before upgrading or uninstalling. To keep settings and indexed data, uninstall through Windows Settings. To remove the default data directory as part of uninstall, run `msiexec /x DeepFind-Setup-x64.msi REMOVEINDEX=1` with the installer used for the installed version. Clear any custom index location from the application before uninstalling.
 
 Before release, verify install, upgrade, and both uninstall paths on Windows. Validate large-index performance on the target hardware, Windows keyboard and Contrast themes, and interruption during an active scan.

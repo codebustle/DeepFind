@@ -134,6 +134,7 @@
     </Style>
 
     <Style x:Key="SoftComboItem" TargetType="ComboBoxItem">
+        <Setter Property="AutomationProperties.Name" Value="{Binding}" />
         <Setter Property="Foreground" Value="{DynamicResource Ink}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="MinHeight" Value="28" />
@@ -203,7 +204,7 @@
                                     MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
                                     MaxHeight="{TemplateBinding MaxDropDownHeight}">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    <ItemsPresenter Margin="0,0,16,0" KeyboardNavigation.DirectionalNavigation="Contained" />
                                 </ScrollViewer>
                             </Border>
                         </Popup>
@@ -273,7 +274,7 @@
                                       CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
                                       HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
                                       VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
-                            <ItemsPresenter />
+                            <ItemsPresenter Margin="0,0,16,0" />
                         </ScrollViewer>
                     </Border>
                 </ControlTemplate>
@@ -286,8 +287,8 @@
         <Setter Property="Foreground" Value="{DynamicResource Secondary}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="MinHeight" Value="28" />
-        <Setter Property="Padding" Value="13,4" />
-        <Setter Property="Margin" Value="0,0,4,4" />
+        <Setter Property="Padding" Value="9,4" />
+        <Setter Property="Margin" Value="0,0,2,4" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
             <Setter.Value>
@@ -382,13 +383,16 @@
                 <ControlTemplate TargetType="MenuItem">
                     <Border x:Name="Chrome" CornerRadius="6" Background="Transparent" Padding="9,5" BorderBrush="Transparent" BorderThickness="1">
                         <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}" FontSize="12" Margin="16,0,0,0"
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBlock x:Name="CheckMark" Text="✓" Visibility="Collapsed" Width="20" VerticalAlignment="Center" />
+                            <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" FontSize="12" Margin="16,0,0,0"
                                        Foreground="{DynamicResource Secondary}" VerticalAlignment="Center" HorizontalAlignment="Right" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsCheckable" Value="True"><Setter TargetName="CheckMark" Property="Visibility" Value="Hidden" /></Trigger>
+                        <Trigger Property="IsChecked" Value="True"><Setter TargetName="CheckMark" Property="Visibility" Value="Visible" /></Trigger>
                         <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource Selected}" />
                         </Trigger>

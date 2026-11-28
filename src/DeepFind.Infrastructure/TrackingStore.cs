@@ -63,6 +63,20 @@ public sealed class TrackingStore
         return (long)command.ExecuteScalar()!;
     }
 
+    // Capture pre-existing pending work atomically with the new generation. A
+    // scheduled subset scan must not acknowledge an outstanding full scan.
+    public (long Generation, bool HadPendingWork) BeginScan()
+    {
+        using var database = Connect();
+        using var command = database.CreateCommand();
+        command.CommandText = "UPDATE scan_jobs SET requested = requested + 1 WHERE id = 1 RETURNING requested, completed";
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+            throw new InvalidOperationException("Scan journal is missing.");
+        var generation = reader.GetInt64(0);
+        return (generation, generation - 1 > reader.GetInt64(1));
+    }
+
     public void CompleteScan(long generation)
     {
         using var database = Connect();

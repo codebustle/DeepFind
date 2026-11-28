@@ -35,11 +35,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string indexMessage = "";
     private IReadOnlyList<ResultRow> results = [];
     private int total;
+    private int page = 1;
+    private bool searching;
 
     public MainViewModel(SettingsStore store, Settings settings, string indexDirectory)
     {
         this.store = store;
-        Settings = settings;
+        Settings = settings with { PageSize = PageSizes.Contains(settings.PageSize) ? settings.PageSize : 250 };
         IndexDirectory = indexDirectory;
         tracking = new(indexDirectory);
         index = new(Path.Combine(indexDirectory, "Search"));
@@ -55,15 +57,79 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public IReadOnlyList<FileState> Issues => states.Values.Where(state => state.Issue is not null)
         .OrderBy(state => state.File.Path, StringComparer.OrdinalIgnoreCase).ToArray();
     public bool Busy => scanTask is { IsCompleted: false };
-    public string Query { get => query; set { if (Set(ref query, value)) QueueSearch(delay: true); } }
-    public FileFilter Filter { get => filter; set { if (Set(ref filter, value)) QueueSearch(delay: false); } }
-    public SortOrder Sort { get => sort; set { if (Set(ref sort, value)) QueueSearch(delay: false); } }
+    public string Query { get => query; set { if (Set(ref query, value)) ResetPageAndSearch(true); } }
+    public FileFilter Filter { get => filter; set { if (Set(ref filter, value)) ResetPageAndSearch(false); } }
+    public SortOrder Sort { get => sort; set { if (Set(ref sort, value)) ResetPageAndSearch(false); } }
+    public static int[] PageSizes { get; } = [50, 100, 250, 500, 1000];
+    public int PageSize
+    {
+        get => Settings.PageSize;
+        set
+        {
+            if (!PageSizes.Contains(value) || value == PageSize) return;
+            if (SavePresentation(Settings with { PageSize = value })) ResetPageAndSearch(false);
+        }
+    }
+    public int Page => page;
+    public int PageCount => total == 0 ? 0 : (total - 1) / PageSize + 1;
+    public string PageLabel => PageCount == 0 ? "Page 0 / 0" : $"Page {Page:N0} / {PageCount:N0}";
+    public bool CanPrevious => !searching && Page > 1;
+    public bool CanNext => !searching && Page < PageCount;
+    public bool ShowPath { get => Settings.ShowPath; set => SavePresentation(Settings with { ShowPath = value }); }
+    public bool ShowLocation { get => Settings.ShowLocation; set => SavePresentation(Settings with { ShowLocation = value }); }
+    public bool ShowExcerpt { get => Settings.ShowExcerpt; set => SavePresentation(Settings with { ShowExcerpt = value }); }
+    public bool ShowModified { get => Settings.ShowModified; set => SavePresentation(Settings with { ShowModified = value }); }
+
+    public void RestoreView() => SavePresentation(Settings with
+    { ShowPath = true, ShowLocation = true, ShowExcerpt = true, ShowModified = true });
+
+    private bool SavePresentation(Settings settings)
+    {
+        if (settings == Settings) return false;
+        try
+        {
+            store.Save(settings);
+            Settings = settings;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            Log.Warning("Could not save result preferences with {ErrorType}", error.GetType().Name);
+            System.Windows.MessageBox.Show("Result preferences could not be saved.", "DeepFind");
+            return false;
+        }
+        foreach (var name in new[] { nameof(Settings), nameof(PageSize), nameof(ShowPath), nameof(ShowLocation),
+            nameof(ShowExcerpt), nameof(ShowModified) })
+            Changed(name);
+        return true;
+    }
+    public void Navigate(int requested)
+    {
+        if (searching || PageCount == 0) return;
+        var target = Math.Clamp(requested, 1, PageCount);
+        if (target == page) return;
+        QueueSearch(false, target);
+    }
+
+    private void ResetPageAndSearch(bool delay)
+    {
+        page = 1;
+        total = 0;
+        Results = [];
+        SearchMessage = "Searching…";
+        QueueSearch(delay);
+    }
+
+    private void NotifyPaging()
+    {
+        foreach (var name in new[] { nameof(ResultCount), nameof(Page), nameof(PageCount), nameof(PageLabel),
+            nameof(CanPrevious), nameof(CanNext) })
+            Changed(name);
+    }
     public IReadOnlyList<ResultRow> Results { get => results; private set => Set(ref results, value); }
     public string SearchMessage { get => searchMessage; private set => Set(ref searchMessage, value); }
     public string IndexMessage { get => indexMessage; private set => Set(ref indexMessage, value); }
-    public string ResultCount => total == 0 ? "" : Results.Count < total
-        ? $"{Results.Count:N0} of {total:N0} results"
-        : total == 1 ? "1 result" : $"{total:N0} results";
+    public string ResultCount => searching ? "Searching…" : total == 0 ? "0 results"
+        : $"{(page - 1) * PageSize + 1:N0}–{(page - 1) * PageSize + Results.Count:N0} of {total:N0} results";
     public bool HasFolders => Settings.Folders.Length > 0;
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -73,10 +139,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         RefreshWatchers();
         timer.Start();
         QueueSearch(delay: false);
-        await RunIndexAsync(pruneOnly: Settings.Paused);
+        // A no-folder launch only prunes stale records from an interrupted settings change.
+        await RunIndexAsync(pruneOnly: Settings.Paused || !HasFolders);
     }
 
-    public void QueueSearch(bool delay)
+    public void QueueSearch(bool delay, int? requestedPage = null)
     {
         if (closing.IsCancellationRequested)
             return;
@@ -84,7 +151,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(closing.Token);
         searchCancellation = cancellation;
         var previous = searchTask;
-        searchTask = SearchAsync(new(Query, Filter, Sort), delay, cancellation, previous);
+        searching = true;
+        NotifyPaging();
+        searchTask = SearchAsync(new(Query, Filter, Sort, PageSize, requestedPage ?? page), delay, cancellation, previous);
     }
 
     public void CancelSearch() => searchCancellation?.Cancel();
@@ -102,23 +171,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var token = owner.Token;
             if (delay)
                 await Task.Delay(200, token);
-            var found = await Task.Run(() => index.Search(request, token), token);
+            var found = HasFolders
+                ? await Task.Run(() => index.Search(request, token), token)
+                : new SearchResults(0, []);
             token.ThrowIfCancellationRequested();
             Results = found.Hits.Select(hit => new ResultRow(hit,
                 states.TryGetValue(hit.File.Id, out var state) && state.Unavailable)).ToArray();
             total = found.Total;
+            page = found.Page;
             SearchMessage = !HasFolders ? "Add a folder to start searching your files."
                 : total == 0 ? Busy ? "Indexing is in progress." : request.Query.Length > 0
                     ? "No matching files." : "No indexed files to show."
                 : "";
-            Changed(nameof(ResultCount));
+            NotifyPaging();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { if (ReferenceEquals(searchCancellation, owner) && total == 0) SearchMessage = "Search cancelled."; }
         catch (Exception error)
         {
             Results = [];
             total = 0;
-            Changed(nameof(ResultCount));
+            page = 1;
+            NotifyPaging();
             if (error is not FormatException)
                 Log.Warning("Search failed with {ErrorType}", error.GetType().Name);
             SearchMessage = error is FormatException ? error.Message : "Search could not read the local index.";
@@ -126,12 +199,29 @@ public sealed class MainViewModel : INotifyPropertyChanged
         finally
         {
             if (ReferenceEquals(searchCancellation, owner))
+            {
                 searchCancellation = null;
+                searching = false;
+                NotifyPaging();
+            }
         }
     }
 
     public async Task ApplySettingsAsync(Settings settings)
     {
+        var requiresScan = !Settings.Folders.SequenceEqual(settings.Folders) ||
+            !Settings.Exclusions.SequenceEqual(settings.Exclusions) ||
+            Settings.MaxMegabytes != settings.MaxMegabytes ||
+            Settings.IncludeOtherFiles != settings.IncludeOtherFiles;
+        if (!requiresScan)
+        {
+            var scheduleChanged = Settings.LocalHours != settings.LocalHours || Settings.NetworkHours != settings.NetworkHours;
+            store.Save(settings);
+            Settings = settings;
+            Changed(nameof(Settings));
+            if (scheduleChanged) lastScan.Clear();
+            return;
+        }
         managing = true;
         try
         {
@@ -229,8 +319,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     Interlocked.Exchange(ref changedAt, 0);
                 var progress = new Progress<IndexProgress>(value =>
                 {
-                    if (ReferenceEquals(scanCancellation, owner) && value.Message == "Indexing files")
-                        IndexMessage = $"Indexing · {value.Processed:N0} checked";
+                    if (!ReferenceEquals(scanCancellation, owner)) return;
+                    if (value.Message == "Indexing files")
+                        IndexMessage = $"Indexing new/changed files · {value.Updated:N0} processed · {value.Processed:N0} checked";
+                    else if (value.Message == "Checking indexed folders")
+                        IndexMessage = $"Checking indexed folders · {value.Processed:N0} checked";
+                    else if (value.Message == "Index is up to date")
+                        Log.Information("Index reconciliation completed: {Checked} checked, {Updated} new or changed, {Notices} notices",
+                            value.Processed, value.Updated, value.Errors);
                 });
                 await coordinator.ReconcileAsync(effective, progress, token, roots, retryPath);
                 foreach (var root in roots ?? Settings.Folders)
@@ -241,8 +337,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
             states = await Task.Run(tracking.Load, token);
             Changed(nameof(Issues));
             var issues = states.Values.Count(state => state.Issue is not null);
+            var unavailable = states.Values.Count(state => state.Unavailable);
             IndexMessage = Settings.Paused ? "Index paused" : !HasFolders ? "" : issues == 0
-                ? "Index up to date" : $"Index updated · {issues:N0} file notices";
+                ? "Index up to date" : unavailable > 0
+                    ? $"Source unavailable · {issues:N0} file notices" : $"Index updated · {issues:N0} file notices";
         }
         catch (OperationCanceledException) { IndexMessage = Settings.Paused ? "Index paused" : IndexMessage; }
         catch (Exception error)
@@ -375,4 +473,14 @@ public sealed record ResultRow(SearchHit Hit, bool Unavailable)
     public string Name => Path.GetFileName(Hit.File.Path);
     public string PathText => Unavailable ? $"{Hit.File.Path} · Unavailable" : Hit.File.Path;
     public string Location => Hit.Location is null ? "" : $"{Hit.Location}  ·  ";
+    public string MatchLocation => Hit.Location ?? "";
+    public string FormatLabel => string.IsNullOrWhiteSpace(Hit.File.Extension) ? "FILE" : Hit.File.Extension.ToUpperInvariant();
+    public string FormatIcon => Hit.File.Extension switch
+    {
+        "pdf" => "PDF", "docx" => "W", "xlsx" => "X", "csv" => "CSV", "pptx" => "P",
+        "txt" => "TXT", "md" => "MD", "html" or "htm" => "HTML", _ => "FILE"
+    };
+    public string ModifiedText => Hit.File.ModifiedTicks > 0 && Hit.File.ModifiedTicks <= DateTime.MaxValue.Ticks
+        ? "Modified: " + new DateTime(Hit.File.ModifiedTicks, DateTimeKind.Utc).ToLocalTime().ToString("g")
+        : "Modified: Unknown";
 }

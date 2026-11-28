@@ -8,9 +8,9 @@ permissions:
   contents: read
 
 jobs:
-  windows:
+  build:
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -20,23 +20,88 @@ jobs:
       - run: dotnet test DeepFind.slnx -c Release --no-build
       - run: dotnet list DeepFind.slnx package --vulnerable --include-transitive
       - run: dotnet publish src/DeepFind.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
-      - run: dotnet build installer/DeepFind.Installer.wixproj -c Release
+      - name: Build candidate MSI
+        id: candidate_installer
+        run: dotnet build installer/DeepFind.Installer.wixproj -c Release
+      - name: Upload candidate MSI for independent acceptance jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepFind-Setup-x64-candidate
+          path: installer/bin/**/DeepFind-Setup-x64.msi
+          if-no-files-found: error
+      - name: Upload validated source fixtures
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepfind-format-fixtures
+          path: ${{ runner.temp }}/deepfind-ui-formats/*
+          if-no-files-found: error
+  windows-acceptance:
+    name: Windows acceptance (${{ matrix.scenario }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: interface
+            runner: windows-latest
+          - scenario: installer
+            runner: windows-latest
+          - scenario: formats
+            runner: windows-latest
+          - scenario: network
+            runner: windows-latest
+          - scenario: recovery
+            runner: windows-latest
+          - scenario: formats-client-arm
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download candidate MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: DeepFind-Setup-x64-candidate
+          path: installer/bin
+      - name: Record supplementary Windows client environment
+        if: matrix.scenario == 'formats-client-arm'
+        shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          Write-Host "Client comparison: $($os.Caption), $($os.Version), build $($os.BuildNumber), architecture $($os.OSArchitecture); candidate remains x64."
+      - name: Download validated format fixtures
+        if: matrix.scenario == 'formats' || matrix.scenario == 'formats-client-arm'
+        uses: actions/download-artifact@v4
+        with:
+          name: deepfind-format-fixtures
+          path: ${{ runner.temp }}/deepfind-ui-formats
       - name: Install, launch, and uninstall DeepFind
+        if: matrix.scenario == 'interface'
+        timeout-minutes: 8
         shell: pwsh
         run: |
           $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
           if ($msi.Count -ne 1) { throw "Expected one DeepFind installer, found $($msi.Count)." }
 
-          function Invoke-Installer($operation, $log) {
-            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`""
+          function Invoke-Installer($operation, $log, $properties = "") {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`" $properties"
             $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
             if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
           }
 
           $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
           Invoke-Installer /i deepfind-install.log
+          $shortcutPath = Join-Path ([Environment]::GetFolderPath('Programs')) 'DeepFind.lnk'
+          $desktopPath = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'DeepFind.lnk'
           try {
-            $process = Start-Process $application -PassThru
+            if (Test-Path $desktopPath) { throw "Silent default unexpectedly created a Desktop shortcut." }
+            if (-not (Test-Path $shortcutPath)) { throw "Start Menu shortcut is missing: $shortcutPath" }
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcut = $shell.CreateShortcut($shortcutPath)
+            if ($shortcut.TargetPath -ne $application -or -not (Test-Path $shortcut.TargetPath)) {
+              throw "Start Menu shortcut target does not resolve to the installed application."
+            }
+            $process = Start-Process $shortcut.TargetPath -PassThru
             try {
               $deadline = (Get-Date).AddSeconds(45)
               do {
@@ -48,25 +113,184 @@ jobs:
               if ($process.MainWindowHandle -eq 0 -or $process.MainWindowTitle -ne 'DeepFind') {
                 throw "DeepFind did not open its main window."
               }
-              if (-not $process.CloseMainWindow() -or -not $process.WaitForExit(15000) -or $process.ExitCode -ne 0) {
-                throw "DeepFind did not close cleanly."
-              }
+              if (-not $process.CloseMainWindow()) { throw "DeepFind window rejected the close request." }
+              if (-not $process.WaitForExit(15000)) { throw "DeepFind stayed alive after close." }
+              if ($process.ExitCode -ne 0) { throw "DeepFind exited with code $($process.ExitCode) after closing." }
             } finally {
               if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
             }
+            & powershell.exe -NoProfile -File tests/WindowsUiSmoke.ps1 -Application $application
+            if ($LASTEXITCODE -ne 0) { throw "Windows UI smoke failed." }
           } finally {
             Invoke-Installer /x deepfind-uninstall.log
           }
           if (Test-Path $application) { throw "DeepFind executable remained after uninstall." }
+          if (Test-Path $shortcutPath) { throw "DeepFind Start Menu shortcut remained after uninstall." }
+      - name: Test silent opt-in and interactive Finish checkbox
+        if: matrix.scenario == 'installer'
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($msi.Count -ne 1) { throw "Expected one candidate MSI." }
+          function Invoke-Installer($operation, $log, $properties = "") {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`" $properties"
+            $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
+          }
+          $desktopPath = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'DeepFind.lnk'
+          $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
+          $shell = New-Object -ComObject WScript.Shell
+          Invoke-Installer /i deepfind-desktop-install.log "DESKTOPSHORTCUT=1"
+          try {
+            if (-not (Test-Path $desktopPath)) { throw "Silent Desktop opt-in did not create a shortcut." }
+            $desktopLink = $shell.CreateShortcut($desktopPath)
+            if ($desktopLink.TargetPath -ne $application) { throw "Desktop shortcut has an incorrect target." }
+          } finally {
+            Invoke-Installer /x deepfind-desktop-uninstall.log
+          }
+          if (Test-Path $desktopPath) { throw "Owned Desktop shortcut remained after uninstall." }
+          & powershell.exe -NoProfile -File tests/WindowsInstallerUi.ps1 -Msi $msi[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw "Interactive installer UI test failed." }
+      - name: Test first-run picker, document formats, result actions and preferences
+        if: matrix.scenario == 'formats' || matrix.scenario == 'formats-client-arm'
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($msi.Count -ne 1) { throw 'Expected one candidate MSI.' }
+          $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
+          function Invoke-Installer($operation, $log) {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`""
+            $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
+          }
+          Invoke-Installer /i deepfind-formats-install.log
+          try {
+            & powershell.exe -NoProfile -File tests/WindowsUiFormats.ps1 -Application $application
+            if ($LASTEXITCODE -ne 0) { throw 'Windows format and preferences acceptance scenarios failed.' }
+          } finally {
+            Invoke-Installer /x deepfind-formats-uninstall.log
+          }
+      - name: Test actual local SMB disconnect, overlap, retry and paused restart
+        if: matrix.scenario == 'network'
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($msi.Count -ne 1) { throw 'Expected one candidate MSI.' }
+          $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
+          function Invoke-Installer($operation, $log) {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`""
+            $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
+          }
+          Invoke-Installer /i deepfind-network-install.log
+          try {
+            & powershell.exe -NoProfile -File tests/WindowsNetwork.ps1 -Application $application
+            if ($LASTEXITCODE -ne 0) { throw 'Windows SMB and paused restart acceptance scenarios failed.' }
+          } finally {
+            Invoke-Installer /x deepfind-network-uninstall.log
+          }
+      - name: Test interrupted indexing, large result pages and corruption recovery
+        if: matrix.scenario == 'recovery'
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          $msi = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($msi.Count -ne 1) { throw 'Expected one candidate MSI.' }
+          $application = Join-Path $env:LOCALAPPDATA 'Programs/DeepFind/DeepFind.App.exe'
+          function Invoke-Installer($operation, $log) {
+            $arguments = "$operation `"$($msi[0].FullName)`" /quiet /norestart /log `"$env:RUNNER_TEMP/$log`""
+            $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($result.ExitCode -ne 0) { throw "Windows Installer returned $($result.ExitCode). See $log." }
+          }
+          Invoke-Installer /i deepfind-recovery-install.log
+          try {
+            & powershell.exe -NoProfile -File tests/WindowsRecovery.ps1 -Application $application
+            if ($LASTEXITCODE -ne 0) { throw 'Windows indexing recovery scenarios failed.' }
+          } finally {
+            Invoke-Installer /x deepfind-recovery-uninstall.log
+          }
+      - name: Collect app logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $logs = Join-Path $env:LOCALAPPDATA 'DeepFind/Logs'
+          if (Test-Path $logs) { Copy-Item (Join-Path $logs '*.log') $env:RUNNER_TEMP -ErrorAction SilentlyContinue }
       - name: Upload installer logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: installer-logs
-          path: ${{ runner.temp }}/deepfind-*.log
+          name: installer-logs-${{ matrix.scenario }}
+          path: |
+            ${{ runner.temp }}/deepfind-*.log
+            ${{ runner.temp }}/app-*.log
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: DeepFind-Setup-x64
-          path: installer/bin/**/DeepFind-Setup-x64.msi
-          if-no-files-found: error
+          name: windows-ui-evidence-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/deepfind-ui-*.png
+          if-no-files-found: ignore
+  windows-upgrade:
+    name: Windows V2 upgrade and retention
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Download candidate MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: DeepFind-Setup-x64-candidate
+          path: installer/bin
+      - name: Check out immutable V2 baseline
+        timeout-minutes: 6
+        id: baseline_checkout
+        uses: actions/checkout@v4
+        with:
+          ref: 14f027a5c42bf2cb8b03b54e49410e08384d0de7
+          path: baseline-v2
+      - name: Build V2 installer for upgrade scenario
+        timeout-minutes: 6
+        id: baseline_installer
+        working-directory: baseline-v2
+        run: |
+          dotnet publish src/DeepFind.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
+          dotnet build installer/DeepFind.Installer.wixproj -c Release
+      - name: Upgrade from V2, repair and verify data preservation
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          $old = @(Get-ChildItem baseline-v2/installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          $new = @(Get-ChildItem installer/bin -Recurse -Filter DeepFind-Setup-x64.msi)
+          if ($old.Count -ne 1 -or $new.Count -ne 1) { throw 'Expected exactly one MSI per version.' }
+          & powershell.exe -NoProfile -File tests/WindowsUpgrade.ps1 -PreviousMsi $old[0].FullName -CandidateMsi $new[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Upgrade and repair matrix failed.' }
+      - name: Collect app logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $logs = Join-Path $env:LOCALAPPDATA 'DeepFind/Logs'
+          if (Test-Path $logs) { Copy-Item (Join-Path $logs '*.log') $env:RUNNER_TEMP -ErrorAction SilentlyContinue }
+      - name: Upload installer logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-logs-upgrade
+          path: |
+            ${{ runner.temp }}/deepfind-*.log
+            ${{ runner.temp }}/app-*.log
+          if-no-files-found: ignore
+      - name: Upload Windows UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ui-evidence-upgrade
+          path: ${{ runner.temp }}/deepfind-ui-*.png
+          if-no-files-found: ignore

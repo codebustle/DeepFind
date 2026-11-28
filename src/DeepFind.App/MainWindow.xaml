@@ -7,8 +7,10 @@
         Background="{DynamicResource Surface}" Foreground="{DynamicResource Ink}"
         Loaded="OnLoaded" Closing="OnClosing" PreviewKeyDown="OnKeyDown">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
         <Style x:Key="ResultItem" TargetType="ListBoxItem" BasedOn="{StaticResource SoftListItem}">
             <Setter Property="Padding" Value="0" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -41,9 +43,8 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <!-- Separate search field and action; the field flexes when the window is resized. -->
+        <!-- Live search uses the entire width; Enter still refreshes. -->
         <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
             <Border x:Name="SearchFrame" Background="{DynamicResource ControlSurface}" BorderThickness="1" CornerRadius="8"
                     MinHeight="36">
                 <Border.Style>
@@ -95,9 +96,6 @@
                     </Button>
                 </Grid>
             </Border>
-            <Button Grid.Column="1" Content="Search" Click="OnSearch" Style="{StaticResource PrimaryButton}"
-                    Width="122" MinHeight="36" Margin="8,0,0,0" ToolTip="Run search (Enter)"
-                    AutomationProperties.Name="Run search" />
         </Grid>
         <Border Grid.Row="1" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Line}" Padding="0,10,0,4">
             <WrapPanel>
@@ -108,11 +106,40 @@
                 <RadioButton Content="Excel" GroupName="Types" Tag="Excel" Checked="OnFilter" Style="{StaticResource FilterButton}" MinWidth="57" />
                 <ComboBox x:Name="SortBox" MinWidth="119" Margin="8,0,0,4" VerticalAlignment="Center"
                           Style="{StaticResource SoftComboBox}" ItemsSource="{Binding SortOptions, RelativeSource={RelativeSource AncestorType=Window}}"
-                          SelectedItem="{Binding Sort}" AutomationProperties.Name="Sort results" />
+                          SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Sort, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          AutomationProperties.Name="Sort results" AutomationProperties.AutomationId="SortBox" />
+                <Button Content="View ▾" Click="OnView" Style="{StaticResource SoftButton}" Margin="4,0,0,4"
+                        AutomationProperties.Name="Result view options" AutomationProperties.AutomationId="ViewOptions">
+                    <Button.ContextMenu>
+                        <ContextMenu Style="{StaticResource SoftContextMenu}" DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="File path" IsCheckable="True" IsChecked="{Binding ShowPath, Mode=TwoWay}" StaysOpenOnClick="True" />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Match location" IsCheckable="True" IsChecked="{Binding ShowLocation, Mode=TwoWay}" StaysOpenOnClick="True" />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Content excerpt" IsCheckable="True" IsChecked="{Binding ShowExcerpt, Mode=TwoWay}" StaysOpenOnClick="True" />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Modified date" IsCheckable="True" IsChecked="{Binding ShowModified, Mode=TwoWay}" StaysOpenOnClick="True" />
+                            <Separator />
+                            <MenuItem Style="{StaticResource SoftMenuItem}" Header="Restore defaults" Click="OnRestoreView" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
             </WrapPanel>
         </Border>
-        <TextBlock Grid.Row="2" Text="{Binding ResultCount}" HorizontalAlignment="Right" Margin="4,6,4,7"
-                   FontSize="12" Foreground="{DynamicResource Secondary}" AutomationProperties.LiveSetting="Polite" />
+        <WrapPanel Grid.Row="2" Margin="0,5,0,7">
+            <TextBlock Text="{Binding ResultCount}" AutomationProperties.AutomationId="ResultCount" Margin="0,0,12,4" VerticalAlignment="Center"
+                       FontSize="12" Foreground="{DynamicResource Secondary}" AutomationProperties.LiveSetting="Polite" />
+            <Button Content="|‹" Click="OnFirstPage" IsEnabled="{Binding CanPrevious}" Style="{StaticResource SoftButton}"
+                    Margin="0,0,4,4" AutomationProperties.Name="First page" AutomationProperties.AutomationId="FirstPage" />
+            <Button Content="‹" Click="OnPreviousPage" IsEnabled="{Binding CanPrevious}" Style="{StaticResource SoftButton}"
+                    Margin="0,0,4,4" AutomationProperties.Name="Previous page" AutomationProperties.AutomationId="PreviousPage" />
+            <TextBlock Text="{Binding PageLabel}" AutomationProperties.AutomationId="PageLabel" VerticalAlignment="Center" Margin="2,0,6,4" AutomationProperties.LiveSetting="Polite" />
+            <Button Content="›" Click="OnNextPage" IsEnabled="{Binding CanNext}" Style="{StaticResource SoftButton}"
+                    Margin="0,0,4,4" AutomationProperties.Name="Next page" AutomationProperties.AutomationId="NextPage" />
+            <Button Content="›|" Click="OnLastPage" IsEnabled="{Binding CanNext}" Style="{StaticResource SoftButton}"
+                    Margin="0,0,10,4" AutomationProperties.Name="Last page" AutomationProperties.AutomationId="LastPage" />
+            <TextBlock Text="Per page" VerticalAlignment="Center" Margin="0,0,6,4" FontSize="12" />
+            <ComboBox ItemsSource="{Binding PageSizes, RelativeSource={RelativeSource AncestorType=Window}}"
+                      SelectedItem="{Binding PageSize}" Style="{StaticResource SoftComboBox}" MinWidth="76"
+                      Margin="0,0,0,4" AutomationProperties.Name="Results per page" AutomationProperties.AutomationId="PageSize" />
+        </WrapPanel>
         <Grid Grid.Row="3">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
                 <TextBlock Text="{Binding SearchMessage}" TextWrapping="Wrap" TextAlignment="Center"
@@ -162,7 +189,7 @@
             <ListBox x:Name="ResultsList" ItemsSource="{Binding Results}" Background="Transparent" BorderThickness="0" Padding="0" ItemContainerStyle="{StaticResource ResultItem}"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="True"
                      VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
-                     MouseDoubleClick="OnResultDoubleClick" PreviewMouseRightButtonDown="OnResultRightClick" AutomationProperties.Name="Search results">
+                     MouseDoubleClick="OnResultDoubleClick" PreviewMouseRightButtonDown="OnResultRightClick" AutomationProperties.Name="Search results" AutomationProperties.AutomationId="ResultsList">
                 <ListBox.Style>
                     <Style TargetType="ListBox" BasedOn="{StaticResource SoftListBox}">
                         <Style.Triggers>
@@ -182,23 +209,53 @@
                 </ListBox.ContextMenu>
                 <ListBox.ItemTemplate>
                     <DataTemplate DataType="{x:Type local:ResultRow}">
-                        <Border MinHeight="94" Padding="9,13,9,13" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Line}">
+                        <Border MinHeight="54" Padding="9,10,9,10" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Line}">
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                 <Border Background="{DynamicResource ControlSurface}" CornerRadius="8" Width="38" Height="38"
                                         Margin="0,0,13,0" VerticalAlignment="Top">
-                                    <TextBlock Text="&#xE8A5;" FontFamily="Segoe MDL2 Assets" FontSize="19"
+                                    <TextBlock Text="{Binding FormatIcon}" FontSize="10" FontWeight="SemiBold"
+                                               ToolTip="{Binding FormatLabel}" AutomationProperties.Name="{Binding FormatLabel}"
                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
                                                ToolTip="{Binding Name}" local:HighlightText.Value="{Binding Name}"
                                                local:HighlightText.Terms="{Binding Hit.Highlights}" />
+                                    <TextBlock Text="{Binding FormatLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FormatLabel}" FontSize="11" Foreground="{DynamicResource Secondary}" />
                                     <TextBlock Text="{Binding PathText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PathText}"
-                                               Foreground="{DynamicResource Secondary}" Margin="0,3,0,0" />
-                                    <TextBlock Foreground="{DynamicResource Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"
-                                               local:HighlightText.Value="{Binding Hit.Snippet}" local:HighlightText.Prefix="{Binding Location}"
-                                               local:HighlightText.Terms="{Binding Hit.Highlights}" />
+                                               Foreground="{DynamicResource Secondary}" Margin="0,3,0,0"
+                                               Visibility="{Binding DataContext.ShowPath, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhenTrue}}" />
+                                    <TextBlock Text="{Binding ModifiedText}" FontSize="12" Foreground="{DynamicResource Secondary}"
+                                               Margin="0,3,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding DataContext.ShowModified, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource VisibleWhenTrue}}" />
+                                    <TextBlock Text="{Binding MatchLocation}" Foreground="{DynamicResource Secondary}" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Setter Property="Margin" Value="0,3,0,0" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding MatchLocation}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.ShowLocation, RelativeSource={RelativeSource AncestorType=Window}}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Foreground="{DynamicResource Secondary}" TextWrapping="Wrap"
+                                               local:HighlightText.Value="{Binding Hit.Snippet}" local:HighlightText.Terms="{Binding Hit.Highlights}">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                                <Setter Property="Margin" Value="0,4,0,0" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Hit.Snippet}" Value=""><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.ShowExcerpt, RelativeSource={RelativeSource AncestorType=Window}}" Value="False"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="Source unavailable" Foreground="{DynamicResource Secondary}" FontSize="12"
+                                               Visibility="{Binding Unavailable, Converter={StaticResource VisibleWhenTrue}}" />
                                 </StackPanel>
                             </Grid>
                         </Border>

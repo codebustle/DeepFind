@@ -22,10 +22,47 @@ public partial class MainWindow : Window
         InitializeComponent();
         Theme.AttachWindow(this);
         DataContext = model;
+        model.PropertyChanged += OnModelChanged;
         SystemEvents.UserPreferenceChanged += OnPreferencesChanged;
     }
 
-    public SortOrder[] SortOptions { get; } = Enum.GetValues<SortOrder>();
+    public sealed record SortChoice(SortOrder Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
+    public SortChoice[] SortOptions { get; } =
+    [
+        new(SortOrder.Relevance, "Relevance"), new(SortOrder.Modified, "Modified — newest"),
+        new(SortOrder.ModifiedOldest, "Modified — oldest"), new(SortOrder.Name, "Name — A to Z"),
+        new(SortOrder.NameDescending, "Name — Z to A"), new(SortOrder.Size, "Size — largest"),
+        new(SortOrder.SizeAscending, "Size — smallest"), new(SortOrder.Path, "Path — A to Z"),
+        new(SortOrder.PathDescending, "Path — Z to A")
+    ];
+    public int[] PageSizes => MainViewModel.PageSizes;
+
+    private void OnModelChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.Results))
+        {
+            ResultsList.SelectedIndex = -1;
+            if (ResultsList.HasItems) ResultsList.ScrollIntoView(ResultsList.Items[0]);
+        }
+    }
+
+    private void OnFirstPage(object sender, RoutedEventArgs e) => model.Navigate(1);
+    private void OnPreviousPage(object sender, RoutedEventArgs e) => model.Navigate(model.Page - 1);
+    private void OnNextPage(object sender, RoutedEventArgs e) => model.Navigate(model.Page + 1);
+    private void OnLastPage(object sender, RoutedEventArgs e) => model.Navigate(model.PageCount);
+    private void OnView(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { ContextMenu: { } menu } button)
+        {
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
+    private void OnRestoreView(object sender, RoutedEventArgs e) => model.RestoreView();
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
@@ -36,7 +73,6 @@ public partial class MainWindow : Window
     private void OnPreferencesChanged(object sender, UserPreferenceChangedEventArgs e) =>
         Dispatcher.InvokeAsync(() => Theme.Apply(model.Settings.Theme));
 
-    private void OnSearch(object sender, RoutedEventArgs e) => model.QueueSearch(delay: false);
     private void OnClearSearch(object sender, RoutedEventArgs e)
     {
         // Clear only the query; keep the selected filter and sort and refresh results immediately.
@@ -140,7 +176,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Launch(ResultRow row, bool reveal)
+    private async void Launch(ResultRow row, bool reveal)
     {
         var path = row.Hit.File.Path;
         if (!System.IO.File.Exists(path))
@@ -151,13 +187,23 @@ public partial class MainWindow : Window
 
         try
         {
-            var launch = reveal ? new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"")
-                : new ProcessStartInfo(path) { UseShellExecute = true, Verb = "open" };
-            Process.Start(launch)?.Dispose();
+            if (reveal)
+            {
+                // The command-line /select route may open the folder without selecting
+                // the item. Use an absolute Shell item identifier and the selection API.
+                await ShellSelection.RevealAsync(path);
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "open" })?.Dispose();
+            }
         }
-        catch (Exception error) when (error is Win32Exception or InvalidOperationException)
+        catch (Exception error) when (error is Win32Exception or InvalidOperationException or
+                                      System.Runtime.InteropServices.COMException or
+                                      System.IO.IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(this, "Windows could not open the selected file.", Title);
+            if (!closing)
+                MessageBox.Show(this, reveal ? "Windows could not select the requested file." : "Windows could not open the selected file.", Title);
         }
     }
 
@@ -180,14 +226,24 @@ public partial class MainWindow : Window
         footer.SetResourceReference(Border.BorderBrushProperty, "Line");
         DockPanel.SetDock(footer, Dock.Bottom);
         content.Children.Add(footer);
-        var path = new TextBlock { Text = row.PathText, TextWrapping = TextWrapping.Wrap, FontSize = 13 };
+        // At the supported minimum preview size, a long path must not
+        // consume the indexed-text viewport. Retain the full path for
+        // accessibility and the tooltip, while keeping the header one line.
+        var path = new TextBlock
+        {
+            Text = row.PathText, TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 13,
+            ToolTip = row.PathText
+        };
+        System.Windows.Automation.AutomationProperties.SetName(path, row.PathText);
         path.SetResourceReference(TextBlock.ForegroundProperty, "Secondary");
         var header = new Border { BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(0, 0, 0, 8), Margin = new Thickness(0, 0, 0, 9), Child = path };
         header.SetResourceReference(Border.BorderBrushProperty, "Line");
         DockPanel.SetDock(header, Dock.Top);
         content.Children.Add(header);
-        var preview = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var preview = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 16, 0) };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(preview, "PreviewText");
         string text;
         try { text = model.ReadPreview(row.Hit); }
         catch (Exception error) when (error is System.IO.IOException or System.Text.Json.JsonException)
@@ -211,7 +267,11 @@ public partial class MainWindow : Window
             return;
         closing = true;
         SystemEvents.UserPreferenceChanged -= OnPreferencesChanged;
+        model.PropertyChanged -= OnModelChanged;
         IsEnabled = false;
+        // Closing may finish synchronously when no scan/search is active. Let the
+        // first cancelled WPF Closing event unwind before invoking Close again.
+        await Task.Yield();
         try { await model.CloseAsync(); }
         finally { allowClose = true; Close(); }
     }

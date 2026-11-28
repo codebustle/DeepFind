@@ -1,11 +1,34 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
-  <Package Name="DeepFind" Manufacturer="DeepFind" Version="1.0.0" Language="1033"
+  <Package Name="DeepFind" Manufacturer="DeepFind" Version="1.1.0" Language="1033"
            UpgradeCode="{ED6F0B68-C8E4-4F0A-A37B-C506335BA17A}" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of DeepFind is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Property Id="REMOVEINDEX" Secure="yes" />
+    <Property Id="DESKTOPSHORTCUT" Secure="yes" />
+    <Property Id="DESKTOPSHORTCUTOWNED">
+      <RegistrySearch Id="FindDesktopShortcutOwner" Root="HKCU" Key="Software\DeepFind\DesktopShortcut" Name="Path" Type="raw" />
+    </Property>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Create a desktop shortcut" />
+    <SetProperty Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" After="AppSearch" Sequence="ui"
+                 Condition="NOT Installed AND (NOT WIX_UPGRADE_DETECTED OR DESKTOPSHORTCUTOWNED)" />
+    <!-- The ExitDialog runs after the MSI transaction has succeeded. The helper
+         records ownership and never replaces an unrelated existing shortcut. -->
+    <CustomAction Id="CreateDesktopShortcut" FileRef="DeepFindExecutable" ExeCommand="--create-desktop-shortcut" Return="ignore" />
+    <CustomAction Id="RemoveDesktopShortcut" FileRef="DeepFindExecutable" ExeCommand="--remove-desktop-shortcut" Return="ignore" />
+    <CustomAction Id="RefreshDesktopShortcut" FileRef="DeepFindExecutable" ExeCommand="--refresh-desktop-shortcut" Return="ignore" />
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="CreateDesktopShortcut" Order="1"
+               Condition="NOT Installed AND WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="RemoveDesktopShortcut" Order="2"
+               Condition="NOT Installed AND WIXUI_EXITDIALOGOPTIONALCHECKBOX &lt;&gt; 1 AND DESKTOPSHORTCUTOWNED" />
+    </UI>
+    <InstallExecuteSequence>
+      <Custom Action="CreateDesktopShortcut" After="InstallFinalize" Condition="NOT Installed AND DESKTOPSHORTCUT = 1" />
+      <Custom Action="RefreshDesktopShortcut" After="CreateDesktopShortcut" Condition="NOT Installed AND WIX_UPGRADE_DETECTED AND DESKTOPSHORTCUTOWNED AND DESKTOPSHORTCUT &lt;&gt; 1" />
+      <Custom Action="RemoveDesktopShortcut" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
     <SetProperty Id="DeepFindDefaultData" Value="[LocalAppDataFolder]DeepFind" Before="Wix4RemoveFoldersEx_X64" Sequence="execute"
                  Condition="Installed AND REMOVEINDEX = 1 AND NOT UPGRADINGPRODUCTCODE" />
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />

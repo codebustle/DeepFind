@@ -11,6 +11,11 @@ public sealed record Settings
     public string? IndexLocation { get; init; }
     public string Theme { get; init; } = "System";
     public bool Paused { get; init; }
+    public int PageSize { get; init; } = 250;
+    public bool ShowPath { get; init; } = true;
+    public bool ShowLocation { get; init; } = true;
+    public bool ShowExcerpt { get; init; } = true;
+    public bool ShowModified { get; init; } = true;
 }
 
 public sealed record TextPart(string Text, string? Location = null);
@@ -25,11 +30,11 @@ public sealed record IndexedDocument(FileVersion File, IReadOnlyList<TextPart> P
 public sealed record FileState(FileVersion File, string? Issue, bool Retry, bool Unavailable);
 public sealed record SearchHit(FileVersion File, string Snippet, string? Location,
     IReadOnlyList<string> Highlights);
-public sealed record SearchResults(int Total, IReadOnlyList<SearchHit> Hits);
-public sealed record IndexProgress(int Processed, int Discovered, int Errors, string Message);
+public sealed record SearchResults(int Total, IReadOnlyList<SearchHit> Hits, int Page = 1);
+public sealed record IndexProgress(int Processed, int Discovered, int Errors, string Message, int Updated = 0);
 public enum FileFilter { All, Documents, Pdf, Excel }
-public enum SortOrder { Relevance, Modified, Name, Size, Path }
-public sealed record SearchRequest(string Query, FileFilter Filter, SortOrder Sort, int Limit = 250);
+public enum SortOrder { Relevance, Modified, Name, Size, Path, ModifiedOldest, NameDescending, SizeAscending, PathDescending }
+public sealed record SearchRequest(string Query, FileFilter Filter, SortOrder Sort, int Limit = 250, int Page = 1);
 
 public interface IContentExtractor
 {
