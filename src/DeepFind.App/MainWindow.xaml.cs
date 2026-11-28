@@ -226,7 +226,16 @@ public partial class MainWindow : Window
         footer.SetResourceReference(Border.BorderBrushProperty, "Line");
         DockPanel.SetDock(footer, Dock.Bottom);
         content.Children.Add(footer);
-        var path = new TextBlock { Text = row.PathText, TextWrapping = TextWrapping.Wrap, FontSize = 13 };
+        // At the supported minimum preview size, a long path must not
+        // consume the indexed-text viewport. Retain the full path for
+        // accessibility and the tooltip, while keeping the header one line.
+        var path = new TextBlock
+        {
+            Text = row.PathText, TextWrapping = TextWrapping.NoWrap,
+            TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 13,
+            ToolTip = row.PathText
+        };
+        System.Windows.Automation.AutomationProperties.SetName(path, row.PathText);
         path.SetResourceReference(TextBlock.ForegroundProperty, "Secondary");
         var header = new Border { BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(0, 0, 0, 8), Margin = new Thickness(0, 0, 0, 9), Child = path };
@@ -234,6 +243,7 @@ public partial class MainWindow : Window
         DockPanel.SetDock(header, Dock.Top);
         content.Children.Add(header);
         var preview = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 16, 0) };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(preview, "PreviewText");
         string text;
         try { text = model.ReadPreview(row.Hit); }
         catch (Exception error) when (error is System.IO.IOException or System.Text.Json.JsonException)
